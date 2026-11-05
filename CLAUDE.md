@@ -53,8 +53,10 @@ o que falhar.
 ## Convenções
 
 - Código, identificadores e commits em inglês. Documentação em português.
-- Conventional Commits com escopo: `feat(server): add blob store (#7)`.
-  Sempre referencie a issue.
+- Conventional Commits. Use o escopo (`core`, `server`, `demo`) quando a
+  mudança for de uma dessas áreas: `feat(server): add blob store (#7)`.
+  Mudanças que atravessam o projeto (setup, CI, processo, docs gerais) ficam
+  sem escopo. Sempre referencie a issue.
 - Uma issue por branch e por PR. Branch: `feat/7-blob-store`. Nunca commite na
   `main`.
 - Toda feature nova tem testes; cada critério de aceitação da issue, um teste.

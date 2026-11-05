@@ -29,14 +29,14 @@ fica fora do escopo.
 
 ## 2. O que o Sprout demonstra e o que não demonstra
 
-| Demonstra | Não demonstra |
-| --- | --- |
-| Commit feito no servidor, sem push | Escala horizontal (é um processo só, com SQLite) |
-| Changeset como diff em relação ao pai | Cache em camadas (daemon, cache regional, servidor) |
-| Objetos imutáveis e content-addressed | Checkout virtualizado |
-| `main` avançada por compare-and-swap, sem lock | Blame, histórico por caminho, skip lists |
-| Reparent automático quando os arquivos são diferentes | Merge ou rebase de conteúdo |
-| Derived data recursiva (só a árvore de arquivos) | Code review, permissões, autenticação |
+| Demonstra                                             | Não demonstra                                       |
+| ----------------------------------------------------- | --------------------------------------------------- |
+| Commit feito no servidor, sem push                    | Escala horizontal (é um processo só, com SQLite)    |
+| Changeset como diff em relação ao pai                 | Cache em camadas (daemon, cache regional, servidor) |
+| Objetos imutáveis e content-addressed                 | Checkout virtualizado                               |
+| `main` avançada por compare-and-swap, sem lock        | Blame, histórico por caminho, skip lists            |
+| Reparent automático quando os arquivos são diferentes | Merge ou rebase de conteúdo                         |
+| Derived data recursiva (só a árvore de arquivos)      | Code review, permissões, autenticação               |
 
 **Atenção:** o artigo da Anthropic não detalha o que o Scion faz quando o
 compare-and-swap da `main` falha. A política de reparent do Sprout é uma decisão
@@ -104,14 +104,14 @@ se paga neste tamanho. Essa decisão vai para o ADR 0001.
 
 ## 5. API do servidor
 
-| Método e caminho | O que faz |
-| --- | --- |
-| `PUT /blobs/:hash` | Grava um blob. Rejeita se o hash do corpo não bater com `:hash` |
-| `GET /blobs/:hash` | Devolve o conteúdo de um blob |
-| `POST /changesets` | Cria um changeset e avança a `main` (com reparent) |
-| `GET /changesets/:id` | Devolve um changeset |
-| `GET /refs/main` | Devolve o id da cabeça da `main` |
-| `GET /changesets/:id/tree` | Devolve a árvore de arquivos (derived data) |
+| Método e caminho           | O que faz                                                       |
+| -------------------------- | --------------------------------------------------------------- |
+| `PUT /blobs/:hash`         | Grava um blob. Rejeita se o hash do corpo não bater com `:hash` |
+| `GET /blobs/:hash`         | Devolve o conteúdo de um blob                                   |
+| `POST /changesets`         | Cria um changeset e avança a `main` (com reparent)              |
+| `GET /changesets/:id`      | Devolve um changeset                                            |
+| `GET /refs/main`           | Devolve o id da cabeça da `main`                                |
+| `GET /changesets/:id/tree` | Devolve a árvore de arquivos (derived data)                     |
 
 ### `POST /changesets` em detalhe
 
@@ -164,15 +164,15 @@ autenticação.
 
 ## 8. Gerência de configuração no repositório
 
-| Conceito | Como aparece |
-| --- | --- |
-| Itens de configuração | Código, ADRs, scripts da demo, `.node-version`, `pnpm-lock.yaml` |
-| Controle de mudanças | Issue → branch → PR com template → CI → autorrevisão → squash merge |
-| Baselines | Tags semver em cada milestone |
-| Rastreabilidade | Conventional Commits; commit na `main` → PR → issue (`Closes #N`) |
-| Registro de status | `CHANGELOG.md` mantido à mão + GitHub Releases |
+| Conceito                | Como aparece                                                         |
+| ----------------------- | -------------------------------------------------------------------- |
+| Itens de configuração   | Código, ADRs, scripts da demo, `.node-version`, `pnpm-lock.yaml`     |
+| Controle de mudanças    | Issue → branch → PR com template → CI → autorrevisão → squash merge  |
+| Baselines               | Tags semver em cada milestone                                        |
+| Rastreabilidade         | Conventional Commits; commit na `main` → PR → issue (`Closes #N`)    |
+| Registro de status      | `CHANGELOG.md` mantido à mão + GitHub Releases                       |
 | Auditoria e verificação | CI (lint, typecheck, testes) em todo PR; branch protection na `main` |
-| Decisões de projeto | ADRs em `docs/adr/` |
+| Decisões de projeto     | ADRs em `docs/adr/`                                                  |
 
 ### ADRs iniciais
 
@@ -193,11 +193,11 @@ autenticação.
 
 ## 10. Marcos
 
-| Milestone | Conteúdo |
-| --- | --- |
-| `v0.1.0` | Fundação: projeto, CI, processo de contribuição, ADRs |
-| `v0.2.0` | Servidor: blobs, changesets, compare-and-swap, reparent, leitura |
-| `v0.3.0` | Demo: agentes, modos, cenários, placar, resultados |
-| `v1.0.0` | Material final: README, vídeo de reserva, material da apresentação |
+| Milestone | Conteúdo                                                           |
+| --------- | ------------------------------------------------------------------ |
+| `v0.1.0`  | Fundação: projeto, CI, processo de contribuição, ADRs              |
+| `v0.2.0`  | Servidor: blobs, changesets, compare-and-swap, reparent, leitura   |
+| `v0.3.0`  | Demo: agentes, modos, cenários, placar, resultados                 |
+| `v1.0.0`  | Material final: README, vídeo de reserva, material da apresentação |
 
 Entrega: 26/11/2026.
