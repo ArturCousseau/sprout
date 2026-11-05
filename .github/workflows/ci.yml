@@ -1,0 +1,50 @@
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║                        INTEGRAÇÃO CONTÍNUA (CI)                      ║
+# ╠══════════════════════════════════════════════════════════════════════╣
+# ║  Roda em todo PR para a main e em todo push na main. Só verifica:    ║
+# ║  nada de deploy, release ou publicação. Node e pnpm vêm do repo      ║
+# ║  (.node-version e packageManager do package.json).                   ║
+# ║                                                                      ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# PERMISSÕES
+# ──────────
+# O job só lê o código.
+permissions:
+  contents: read
+
+jobs:
+  # O id `verify` é o check obrigatório no ruleset da main. Renomear o job,
+  # adicionar `name:` ou usar matrix muda o nome do check e trava todos os PRs.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      # AMBIENTE
+      # ────────
+      # O job nunca faz git push, então o token não fica na config do git.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # Sem `version`: a versão vem de packageManager no package.json.
+      - uses: pnpm/action-setup@v6
+      # Vem depois do pnpm porque `cache: pnpm` precisa dele no PATH.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      # VERIFICAÇÕES
+      # ────────────
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
