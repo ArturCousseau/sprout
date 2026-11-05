@@ -1,0 +1,15 @@
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║                        CONFIGURAÇÕES DO PNPM                         ║
+# ╠══════════════════════════════════════════════════════════════════════╣
+# ║  Este arquivo só guarda configurações do pnpm. O projeto NÃO é um    ║
+# ║  monorepo: é um pacote único (ver docs/adr/0001).                    ║
+# ║                                                                      ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+# SCRIPTS DE BUILD DAS DEPENDÊNCIAS
+# ─────────────────────────────────
+# O pnpm bloqueia scripts de instalação por padrão. O esbuild (usado pelo
+# tsx e pelo vitest) funciona sem o postinstall, porque o binário vem num
+# pacote opcional por plataforma; por isso o script fica negado.
+allowBuilds:
+  esbuild: false

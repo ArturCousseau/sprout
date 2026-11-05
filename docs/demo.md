@@ -26,11 +26,11 @@ no servidor, compare-and-swap e troca de pai) evita esse desperdício.
 
 ## 2. Os cenários
 
-| Cenário | Agentes | Arquivos | Modo | Para quê |
-| --- | --- | --- | --- | --- |
-| A | 2 | Diferentes | Passo a passo | Explicar o mecanismo |
-| B | 10 | Diferentes | Rápido | Mostrar a escala do desperdício |
-| C | 2 | **O mesmo** | Passo a passo ou rápido | Mostrar que o Sprout também rejeita conflitos reais |
+| Cenário | Agentes | Arquivos    | Modo                    | Para quê                                            |
+| ------- | ------- | ----------- | ----------------------- | --------------------------------------------------- |
+| A       | 2       | Diferentes  | Passo a passo           | Explicar o mecanismo                                |
+| B       | 10      | Diferentes  | Rápido                  | Mostrar a escala do desperdício                     |
+| C       | 2       | **O mesmo** | Passo a passo ou rápido | Mostrar que o Sprout também rejeita conflitos reais |
 
 Cada cenário roda **primeiro no git, depois no Sprout**, cada um em tela cheia.
 O placar comparativo aparece só no final.
@@ -71,7 +71,7 @@ partem da mesma `main`. Sem ele, os agentes terminariam em momentos diferentes e
 o resultado mudaria a cada execução.
 
 No git, um push concorrente pode falhar de duas formas: rejeição por não ser
-*fast-forward* (a `main` andou) ou falha ao travar a ref (outro push está
+_fast-forward_ (a `main` andou) ou falha ao travar a ref (outro push está
 atualizando a `main` naquele exato momento). As duas contam como rejeição.
 
 ## 4. Como os agentes do Sprout funcionam
@@ -146,7 +146,7 @@ conflitos reais       0            0
 tempo total        4,1 s        0,3 s
 ```
 
-*(números ilustrativos; os reais vêm da medição)*
+_(números ilustrativos; os reais vêm da medição)_
 
 ### Definição de cada métrica
 
@@ -241,11 +241,11 @@ SQLite. O Scion real faz isso distribuído, e o [integrante 3] vai mostrar como.
 
 ## 12. Perguntas prováveis
 
-| Pergunta | Resposta |
-| --- | --- |
-| "Com retry, o git também aceita tudo. Qual a vantagem?" | A vantagem é o trabalho desperdiçado: rejeições, rebases e tempo. Mostre a linha de tentativas. |
-| "Isso escala?" | Não, e não é o objetivo: um processo só, com SQLite (ADR 0004). O Scion real usa o Spanner, distribuído. |
-| "O que o Scion faz quando o compare-and-swap falha?" | O artigo não detalha. A troca de pai é uma decisão nossa, inspirada no artigo. |
-| "Por que não fazer merge automático no mesmo arquivo?" | Ficou fora do escopo. O artigo diz que, no caso deles, o Claude resolve esses conflitos. |
-| "Isso não é o que uma merge queue faz?" | A merge queue usa uma fila com trava global. O artigo diz que eles não conseguiram manter isso na escala de agentes e passaram a testar depois do merge e antes do deploy. |
-| "O git não seria mais rápido com o servidor na rede?" | Seria mais lento. A demo roda o git localmente, sem rede, o que torna a comparação conservadora. |
+| Pergunta                                                | Resposta                                                                                                                                                                   |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Com retry, o git também aceita tudo. Qual a vantagem?" | A vantagem é o trabalho desperdiçado: rejeições, rebases e tempo. Mostre a linha de tentativas.                                                                            |
+| "Isso escala?"                                          | Não, e não é o objetivo: um processo só, com SQLite (ADR 0004). O Scion real usa o Spanner, distribuído.                                                                   |
+| "O que o Scion faz quando o compare-and-swap falha?"    | O artigo não detalha. A troca de pai é uma decisão nossa, inspirada no artigo.                                                                                             |
+| "Por que não fazer merge automático no mesmo arquivo?"  | Ficou fora do escopo. O artigo diz que, no caso deles, o Claude resolve esses conflitos.                                                                                   |
+| "Isso não é o que uma merge queue faz?"                 | A merge queue usa uma fila com trava global. O artigo diz que eles não conseguiram manter isso na escala de agentes e passaram a testar depois do merge e antes do deploy. |
+| "O git não seria mais rápido com o servidor na rede?"   | Seria mais lento. A demo roda o git localmente, sem rede, o que torna a comparação conservadora.                                                                           |
