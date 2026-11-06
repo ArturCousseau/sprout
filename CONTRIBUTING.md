@@ -9,7 +9,8 @@ comandos de verificação) ficam no [CLAUDE.md](CLAUDE.md), seções "Comandos" 
 ## Fluxo
 
 1. **Issue.** Toda mudança começa numa issue, aberta com o template "Tarefa do
-   backlog" (objetivo, prioridade e critérios de aceite).
+   backlog" (objetivo, prioridade e critérios de aceite). A milestone vai só na
+   issue: o PR não recebe milestone, porque se liga à issue pelo `Closes #N`.
 2. **Branch.** Uma branch por issue, criada a partir da `main`, com o nome no
    formato do CLAUDE.md.
 3. **PR.** Abra o PR para a `main` usando o template. O corpo tem `Closes #N`,
@@ -20,6 +21,9 @@ comandos de verificação) ficam no [CLAUDE.md](CLAUDE.md), seções "Comandos" 
    template (ver [Autorrevisão](#autorrevisão)).
 6. **Squash merge.** O único método de merge permitido. O título do PR vira a
    mensagem do commit na `main`.
+
+Ao fechar uma milestone, o último PR também prepara a versão (ver
+[Release](#release)).
 
 ## Por que squash
 
@@ -118,7 +122,7 @@ A resposta aparece como `github-actions[bot]`.
 
 A action pode falar com o GitHub de dois jeitos: pelo token do Claude GitHub
 App (o padrão) ou pelo `GITHUB_TOKEN` do job, passado no input `github_token`.
-Usamos o `GITHUB_TOKEN`, e o App **não é necessário** (não está instalado).
+Usamos o `GITHUB_TOKEN`.
 
 O motivo: o bloco `permissions:` do workflow limita só o `GITHUB_TOKEN` que o
 GitHub cria para o job. O token do App traz as permissões da instalação do App,
@@ -141,6 +145,58 @@ Desvantagens aceitas:
 O workflow usa a tag `@v1`, que acompanha as correções da versão 1. Fixar num
 SHA de commit seria mais seguro, porque uma tag pode passar a apontar para
 outro código; optamos pela tag por simplicidade.
+
+## Release
+
+Cada milestone fecha com uma versão: uma tag semver anotada (`vX.Y.Z`) e um
+GitHub Release com as notas do [CHANGELOG.md](CHANGELOG.md). Tudo é manual:
+sem ferramenta de release automático e sem workflow que crie PR ou tag.
+
+1. **CHANGELOG e versão no PR da última issue da milestone** (autor do PR).
+   Mova os itens de "Não lançado" para uma seção `## [X.Y.Z] - AAAA-MM-DD`,
+   atualize os links de comparação no fim do arquivo e o campo `version` do
+   `package.json`. Cada item aponta para a issue e para o PR. Para ter o número
+   do próprio PR, abra-o como rascunho antes de escrever o item.
+2. **Squash merge** (Artur), pelo [fluxo](#fluxo) normal: `verify` verde e
+   autorrevisão feita.
+3. **Conferir a `main` local** (Artur), antes de criar a tag. O
+   [ruleset de tags](#passos-manuais) impede mover ou apagar a tag depois, então
+   pare aqui se algo não bater.
+
+   ```sh
+   git switch main && git pull --ff-only
+   git log -1 --oneline
+   # esperado: o commit de squash do PR da release
+   ```
+
+4. **Tag anotada nesse commit** (Artur).
+
+   ```sh
+   git tag -a vX.Y.Z -m "vX.Y.Z: resumo da milestone" HEAD
+   git push origin vX.Y.Z
+   ```
+
+5. **GitHub Release** (Artur), com o corpo da seção da versão no CHANGELOG
+   como notas. `--verify-tag` faz o comando falhar se a tag não existir no
+   GitHub, em vez de criá-la.
+
+   ```sh
+   awk '/^## \[X\.Y\.Z\]/{f=1;next} /^## \[/||/^\[[^]]+\]: /{f=0} f' CHANGELOG.md > /tmp/notas-vX.Y.Z.md
+   gh release create vX.Y.Z --verify-tag --title "vX.Y.Z" --notes-file /tmp/notas-vX.Y.Z.md
+   ```
+
+6. **Fechar a milestone** (Artur), depois de conferir que ela só tem issues.
+
+### Por que a tag vem depois do merge
+
+O squash cria na `main` um commit novo, com outro SHA, a partir dos commits da
+branch. Uma tag criada antes do merge apontaria para um commit da branch que
+nunca entra na `main` e que fica órfão quando a branch é apagada (passo manual
+4). A tag deixaria de marcar o que está na `main`, e o rastreio tag → commit da
+`main` → PR → issue se perderia. Como o ruleset de tags impede mover ou apagar
+uma tag `v*`, o erro não teria conserto e o número da versão ficaria queimado.
+Por isso a tag sempre aponta para um commit que já está na `main`, com o CI
+verde.
 
 ## Comentários em arquivos de configuração
 
@@ -245,4 +301,17 @@ refazer o repositório do zero ou conferir se nada mudou.
    ```sh
    gh secret list -R ArturCousseau/sprout
    # esperado: CLAUDE_CODE_OAUTH_TOKEN na lista
+   ```
+
+7. **Ruleset de tags `v*`** (feito). Em Settings → Rules → Rulesets, o ruleset
+   `tags v*` vale para `refs/tags/v*`, ninguém o contorna, e as regras
+   "Restrict updates", "Restrict deletions" e "Block force pushes" estão
+   ativas. "Restrict creations" fica desmarcado: criar uma tag é permitido, mas
+   alterar e apagar não. Ver [Release](#release).
+
+   ```sh
+   gh api repos/ArturCousseau/sprout/rulesets/26671522 \
+     --jq '{target, enforcement, include: .conditions.ref_name.include, rules: [.rules[].type], bypass_actors}'
+   # esperado: target "tag", enforcement "active", include ["refs/tags/v*"],
+   # rules ["deletion","non_fast_forward","update"] (sem "creation"), bypass_actors []
    ```
