@@ -1,0 +1,41 @@
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║                     TEMPLATE DE ISSUE: TAREFA                        ║
+# ╠══════════════════════════════════════════════════════════════════════╣
+# ║  Issue form do GitHub no formato do backlog: objetivo, prioridade e  ║
+# ║  critérios de aceite. Só aparece depois de chegar à branch padrão.   ║
+# ║                                                                      ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+name: Tarefa do backlog
+description: Uma tarefa com objetivo, prioridade e critérios de aceite.
+
+# CAMPOS
+# ──────
+# Sem `labels:` fixas: o tipo da tarefa varia, então a label é escolhida à mão
+# entre as que já existem.
+body:
+  - type: textarea
+    id: objetivo
+    attributes:
+      label: Objetivo
+      description: O que a tarefa entrega e por quê.
+    validations:
+      required: true
+  # A legenda das prioridades vem do docs/escopo.md, §7 Prioridades.
+  - type: dropdown
+    id: prioridade
+    attributes:
+      label: Prioridade
+      options:
+        - 🟢 essencial
+        - 🟡 desejável
+        - 🔵 extra
+    validations:
+      required: true
+  - type: textarea
+    id: criterios
+    attributes:
+      label: Critérios de aceite
+      description: Um item por critério.
+      value: "- [ ] "
+    validations:
+      required: true

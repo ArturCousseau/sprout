@@ -45,24 +45,30 @@ pnpm, Fastify, better-sqlite3, vitest, ESLint + Prettier, tsx.
 ## Comandos
 
 - `pnpm install`
-- `pnpm typecheck` · `pnpm lint` · `pnpm test` · `pnpm build`
+- `pnpm format:check` · `pnpm lint` · `pnpm typecheck` · `pnpm test` ·
+  `pnpm build`
 
-Antes de considerar uma tarefa concluída, rode typecheck, lint e test e corrija
-o que falhar.
+Antes de considerar uma tarefa concluída, rode format:check, lint, typecheck,
+test e build e corrija o que falhar.
 
 ## Convenções
 
 - Código, identificadores e commits em inglês. Documentação em português.
 - Conventional Commits. Use o escopo (`core`, `server`, `demo`) quando a
-  mudança for de uma dessas áreas: `feat(server): add blob store (#7)`.
+  mudança for de uma dessas áreas: `feat(server): add blob store (#9)`.
   Mudanças que atravessam o projeto (setup, CI, processo, docs gerais) ficam
-  sem escopo. Sempre referencie a issue.
-- Uma issue por branch e por PR. Branch: `feat/7-blob-store`. Nunca commite na
+  sem escopo. Sempre referencie a issue. O título do PR segue o mesmo formato
+  (`feat(server): add blob store (#9)`), porque o squash merge usa o título do
+  PR como mensagem do commit na `main`.
+- Uma issue por branch e por PR. Branch: `feat/9-blob-store`. Nunca commite na
   `main`.
 - Toda feature nova tem testes; cada critério de aceitação da issue, um teste.
 - Prefira a solução mais simples. Sem abstrações "para o futuro".
 - Decisão de arquitetura relevante: sugira um ADR em `docs/adr/NNNN-titulo.md`.
 - Não instale ferramentas globais nem altere configurações fora do repositório
   (mise, `~/.config`, shell) sem perguntar.
+- Antes de editar arquivos de configuração ou o workflow de CI, leia as seções
+  "Comentários em arquivos de configuração" e "CI e o ruleset da `main`" do
+  `CONTRIBUTING.md`.
 - Estou aprendendo TypeScript e backend: ao terminar, explique o que mudou de
   forma que alguém que sabe JavaScript básico e Java entenda.
