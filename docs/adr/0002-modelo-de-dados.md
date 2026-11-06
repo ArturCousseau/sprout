@@ -39,10 +39,11 @@ rejeitar; essa política é detalhada no ADR 0003 (#12).
    colisões conhecidas; hex minúsculo é o que o `node:crypto` gera e cabe em
    URL (`PUT /blobs/:hash`) sem escapar; e o hash do conteúdo comprimido
    mudaria com o nível de compressão.
-5. **Caminhos têm um formato só**: relativos, separados por `/`, sem `\`, sem
-   letra de drive, sem segmento vazio, `.` ou `..` e sem barra final. O core
-   normaliza e valida (`normalizePath`); caminho inválido lança
-   `InvalidPathError`. Alternativas consideradas: aceitar caminhos como vierem,
+5. **Caminhos têm uma forma canônica**: relativa, separada por `/`, sem
+   segmento vazio, `.` ou `..` e sem barra final. Entradas com segmentos `.` ou
+   uma barra final são normalizadas; `\`, `..`, segmento vazio, `/` inicial e
+   letra seguida de `:` no início são rejeitados. O core normaliza e valida
+   (`normalizePath`); caminho inválido lança `InvalidPathError`. Alternativas consideradas: aceitar caminhos como vierem,
    ou converter `\` em `/`. Rejeitadas porque `a/b`, `./a/b` e `a/b/` seriam
    arquivos diferentes, e o servidor deixaria dois agentes alterarem o mesmo
    arquivo sem conflito. Converter `\` esconderia pedidos malformados;
@@ -61,3 +62,5 @@ rejeitar; essa política é detalhada no ADR 0003 (#12).
   caminho que escapar dela quebra a detecção de conflito.
 - Caminhos com `\` ou letra de drive são recusados, mesmo vindos do Windows: o
   cliente precisa converter antes de enviar.
+- Limitação conhecida: variações Unicode (NFC/NFD), maiúsculas e minúsculas e
+  caracteres de controle não são unificadas nem rejeitadas.
