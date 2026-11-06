@@ -33,8 +33,11 @@ jobs:
   # Não é check obrigatório. Não renomear para `verify`: esse nome é o
   # contrato com o ruleset da main (ver CONTRIBUTING).
   claude:
+    # Só filtra pela menção. Quem recusa usuários sem write access é a action.
     if: contains(github.event.comment.body, '@claude')
     runs-on: ubuntu-latest
+    # Uma revisão travada não fica presa até o padrão do GitHub (360 min).
+    timeout-minutes: 10
     steps:
       # O checkout guarda o token no git (sem `persist-credentials: false`,
       # ao contrário do ci.yml): a action faz `git fetch` da branch do PR
@@ -48,7 +51,7 @@ jobs:
       # AUTENTICAÇÃO
       # ────────────
       # Anthropic: secret criado à mão. GitHub: o GITHUB_TOKEN deste job, em
-      # vez do token do App. Só quem tem write access no repo dispara.
+      # vez do token do App.
       #
       # FERRAMENTAS
       # ───────────
