@@ -64,4 +64,4 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
             --disallowedTools "Bash,Edit,MultiEdit,Write,NotebookEdit"
-            --max-turns 5
+            --max-turns 10
