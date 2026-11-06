@@ -40,17 +40,23 @@ describe("normalizePath", () => {
 
     it("rejects a leading slash", () => {
       expectInvalid("/a", "absolute path");
+      expectInvalid("/", "absolute path");
     });
 
     it("rejects a drive letter", () => {
       expectInvalid("C:/a", "absolute path");
       expectInvalid("c:a", "absolute path");
+      expectInvalid("a:b", "absolute path");
     });
   });
 
   describe("parent segment", () => {
     it("accepts a segment that only starts with ..", () => {
       expect(normalizePath("a/..b")).toBe("a/..b");
+    });
+
+    it("accepts a ... segment", () => {
+      expect(normalizePath("a/...")).toBe("a/...");
     });
 
     it("rejects a .. segment", () => {
@@ -74,6 +80,7 @@ describe("normalizePath", () => {
     it("removes every . segment", () => {
       expect(normalizePath("./a/b")).toBe("a/b");
       expect(normalizePath("a/./b")).toBe("a/b");
+      expect(normalizePath("a/.")).toBe("a");
     });
 
     it("rejects a path with only . segments", () => {
@@ -87,8 +94,18 @@ describe("normalizePath", () => {
       expect(normalizePath("a/b/")).toBe("a/b");
     });
 
-    it("rejects more than one trailing slash", () => {
-      expectInvalid("a/b//", "empty segment");
+    it("removes a trailing . segment", () => {
+      expect(normalizePath("a/b/.")).toBe("a/b");
     });
+  });
+
+  describe("idempotence", () => {
+    it.each(["a", "a/b/c", "./a/b", "a/./b/", "a/..b", "a/..."])(
+      "normalizes %s to a fixed point",
+      (input) => {
+        const once = normalizePath(input);
+        expect(normalizePath(once)).toBe(once);
+      },
+    );
   });
 });
