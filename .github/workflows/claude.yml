@@ -1,0 +1,62 @@
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║                        REVISÃO POR IA (@claude)                      ║
+# ╠══════════════════════════════════════════════════════════════════════╣
+# ║  Responde a @claude em comentários de PR e de issue. Só comenta:     ║
+# ║  não commita, não faz push e não aprova PR. Não é check obrigatório. ║
+# ║  Detalhes em "Revisão por IA" no CONTRIBUTING.md.                    ║
+# ║                                                                      ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+name: Claude
+
+on:
+  # Comentário numa issue ou na conversa do PR. Roda o workflow da main.
+  issue_comment:
+    types: [created]
+  # Comentário de linha no diff do PR. Roda o workflow da branch do PR.
+  pull_request_review_comment:
+    types: [created]
+
+# PERMISSÕES
+# ──────────
+# Valem só para o GITHUB_TOKEN que o GitHub cria para o job, passado à action
+# em `github_token`. Não valeriam para o token do Claude GitHub App, que traz
+# as permissões da instalação do App (ver CONTRIBUTING).
+permissions:
+  # Checkout e leitura do código. Sem escrita: o GitHub recusa push e merge.
+  contents: read
+  # Comentar em issues e na conversa do PR.
+  issues: write
+  # Ler o PR e responder dentro de um comentário de linha.
+  pull-requests: write
+
+jobs:
+  # Não é check obrigatório. Não renomear para `verify`: esse nome é o
+  # contrato com o ruleset da main (ver CONTRIBUTING).
+  claude:
+    if: contains(github.event.comment.body, '@claude')
+    runs-on: ubuntu-latest
+    steps:
+      # A action configura o próprio acesso ao git; o checkout não guarda
+      # o token.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      # AUTENTICAÇÃO
+      # ────────────
+      # Anthropic: secret criado à mão. GitHub: o GITHUB_TOKEN deste job, em
+      # vez do token do App. Só quem tem write access no repo dispara.
+      #
+      # FERRAMENTAS
+      # ───────────
+      # Bloqueia Bash (git add, commit e push) e a edição de arquivos.
+      # --max-turns limita o número de rodadas do agente (chamada de
+      # ferramenta → resultado) em cada pedido.
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: |
+            --disallowedTools "Bash,Edit,MultiEdit,Write,NotebookEdit"
+            --max-turns 5

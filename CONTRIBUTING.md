@@ -72,6 +72,10 @@ Para mudar o nome com segurança, altere o check obrigatório no ruleset junto c
 o workflow. Isso é feito à mão, nas configurações do repositório. O comentário
 acima do job `verify` no `ci.yml` registra esse aviso no próprio arquivo.
 
+O workflow da [revisão por IA](#revisão-por-ia-opcional) não entra nesse
+contrato: o job dele se chama `claude` e não é check obrigatório. Nenhum job
+fora do `ci.yml` deve se chamar `verify`.
+
 ## Autorrevisão
 
 Antes do merge, leia o próprio PR como revisor e siga o checklist do template de
@@ -87,8 +91,56 @@ Você pode pedir uma revisão por IA comentando `@claude` no PR. Ela é:
 - **só um comentário:** não commita e não bloqueia o merge;
 - **um complemento:** não substitui a autorrevisão.
 
-A integração ainda está sendo feita na issue #6. Até ela ser concluída, o
-comentário `@claude` não dispara nada.
+O workflow é o [.github/workflows/claude.yml](.github/workflows/claude.yml), que
+usa a action `anthropics/claude-code-action@v1`.
+
+### Como pedir
+
+Escreva `@claude` e o pedido num destes lugares:
+
+- **na conversa do PR ou numa issue:** roda o workflow da `main`;
+- **num comentário de linha no diff do PR:** roda o workflow da branch do PR.
+  Esse comentário abre uma thread, que precisa ser resolvida antes do merge.
+
+Só dispara para quem tem write access no repositório (a action confere isso).
+A resposta aparece como `github-actions[bot]`.
+
+### O que impede o workflow de mudar o repositório
+
+| Garantia                       | Como                                                                                                         |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| Não faz push nem merge         | O token tem `contents: read`; o GitHub recusa                                                                |
+| Não aprova PR                  | "Allow GitHub Actions to create and approve pull requests" desligado (ver [Passos manuais](#passos-manuais)) |
+| Não commita nem edita arquivos | `--disallowedTools` na action (configuração, não permissão)                                                  |
+| Não bloqueia o merge           | O job se chama `claude` e não é check obrigatório                                                            |
+
+### Decisão: GITHUB_TOKEN em vez do Claude GitHub App
+
+A action pode falar com o GitHub de dois jeitos: pelo token do Claude GitHub
+App (o padrão) ou pelo `GITHUB_TOKEN` do job, passado no input `github_token`.
+Usamos o `GITHUB_TOKEN`, e o App **não é necessário** (não está instalado).
+
+O motivo: o bloco `permissions:` do workflow limita só o `GITHUB_TOKEN` que o
+GitHub cria para o job. O token do App traz as permissões da instalação do App,
+que incluem escrita em Contents, Pull requests e Issues (seção "GitHub App
+Permissions" do `docs/security.md` da action), e o `permissions:` não as reduz.
+A action obtém esse token trocando um token OIDC na API da Anthropic
+(`src/github/token.ts`), mas isso é só o caminho, não a causa. Com o App, "não
+faz push" dependeria só da configuração da action; com o `GITHUB_TOKEN`, o
+próprio GitHub recusa.
+
+Desvantagens aceitas:
+
+- as respostas aparecem como `github-actions[bot]`, não como `claude[bot]`;
+- `use_sticky_comment` não funciona (não usamos);
+- a documentação da action recomenda `github_token` só para quem usa um App
+  próprio.
+
+### Versão da action
+
+O workflow usa a tag `@v1`, que acompanha as correções da versão 1. Fixar num
+SHA de commit seria mais seguro, porque uma tag pode passar a apontar para
+outro código; optamos pela tag por simplicidade.
 
 ## Comentários em arquivos de configuração
 
@@ -165,4 +217,32 @@ refazer o repositório do zero ou conferir se nada mudou.
 
    ```sh
    gh api repos/ArturCousseau/sprout/rulesets/26653465
+   ```
+
+4. **Apagar a branch depois do merge** (feito). Em Settings → General → Pull
+   Requests, marque "Automatically delete head branches".
+
+   ```sh
+   gh api repos/ArturCousseau/sprout --jq .delete_branch_on_merge
+   # esperado: true
+   ```
+
+5. **Actions não aprova PR** (feito). Em Settings → Actions → General →
+   Workflow permissions, deixe desmarcado "Allow GitHub Actions to create and
+   approve pull requests". É isso que impede a
+   [revisão por IA](#revisão-por-ia-opcional) de aprovar um PR.
+
+   ```sh
+   gh api repos/ArturCousseau/sprout/actions/permissions/workflow --jq .can_approve_pull_request_reviews
+   # esperado: false
+   ```
+
+6. **Secret da revisão por IA** (feito). Em Settings → Secrets and variables →
+   Actions, crie o secret `CLAUDE_CODE_OAUTH_TOKEN` com o token gerado por
+   `claude setup-token`. O valor nunca passa pelo Claude Code nem vai para o
+   repositório.
+
+   ```sh
+   gh secret list -R ArturCousseau/sprout
+   # esperado: CLAUDE_CODE_OAUTH_TOKEN na lista
    ```
