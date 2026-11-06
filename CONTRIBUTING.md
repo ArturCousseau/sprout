@@ -122,7 +122,7 @@ A resposta aparece como `github-actions[bot]`.
 
 A action pode falar com o GitHub de dois jeitos: pelo token do Claude GitHub
 App (o padrão) ou pelo `GITHUB_TOKEN` do job, passado no input `github_token`.
-Usamos o `GITHUB_TOKEN`, e o App **não é necessário** (não está instalado).
+Usamos o `GITHUB_TOKEN`.
 
 O motivo: o bloco `permissions:` do workflow limita só o `GITHUB_TOKEN` que o
 GitHub cria para o job. O token do App traz as permissões da instalação do App,
@@ -181,8 +181,8 @@ sem ferramenta de release automático e sem workflow que crie PR ou tag.
    GitHub, em vez de criá-la.
 
    ```sh
-   awk '/^## \[X\.Y\.Z\]/{f=1;next} /^## \[/||/^\[[^]]+\]: /{f=0} f' CHANGELOG.md > notas.md
-   gh release create vX.Y.Z --verify-tag --title "vX.Y.Z" --notes-file notas.md
+   awk '/^## \[X\.Y\.Z\]/{f=1;next} /^## \[/||/^\[[^]]+\]: /{f=0} f' CHANGELOG.md > /tmp/notas-vX.Y.Z.md
+   gh release create vX.Y.Z --verify-tag --title "vX.Y.Z" --notes-file /tmp/notas-vX.Y.Z.md
    ```
 
 6. **Fechar a milestone** (Artur), depois de conferir que ela só tem issues.
