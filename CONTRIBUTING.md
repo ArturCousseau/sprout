@@ -106,6 +106,10 @@ Escreva `@claude` e o pedido num destes lugares:
 - **num comentário de linha no diff do PR:** roda o workflow da branch do PR.
   Esse comentário abre uma thread, que precisa ser resolvida antes do merge.
 
+Cole no comentário os critérios de aceite da issue do PR, como texto. O revisor
+não tem `gh`: o `gh` roda pelo `Bash`, que o workflow bloqueia. Por isso não
+peça para ele ler a issue; ele não consegue e gasta rodadas tentando.
+
 Só dispara para quem tem write access no repositório (a action confere isso).
 A resposta aparece como `github-actions[bot]`.
 

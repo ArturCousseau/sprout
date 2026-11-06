@@ -17,6 +17,13 @@ para a issue e para o PR de onde veio. O processo de release está no
   ([#8](https://github.com/ArturCousseau/sprout/issues/8),
   [#29](https://github.com/ArturCousseau/sprout/pull/29)).
 
+### Alterado
+
+- Revisão por IA: limite de turnos sobe de 5 para 10, e o CONTRIBUTING orienta
+  colar os critérios da issue no comentário do `@claude`
+  ([#30](https://github.com/ArturCousseau/sprout/issues/30),
+  [#31](https://github.com/ArturCousseau/sprout/pull/31)).
+
 ## [0.1.0] - 2026-11-06
 
 ### Adicionado
