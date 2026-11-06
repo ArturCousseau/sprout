@@ -10,6 +10,13 @@ para a issue e para o PR de onde veio. O processo de release está no
 
 ## [Não lançado]
 
+### Adicionado
+
+- Core do domínio: tipos `Changeset` e `Change`, hash SHA-256 do conteúdo,
+  normalização e validação de caminhos e o ADR 0002, sobre o modelo de dados
+  ([#8](https://github.com/ArturCousseau/sprout/issues/8),
+  [#29](https://github.com/ArturCousseau/sprout/pull/29)).
+
 ## [0.1.0] - 2026-11-06
 
 ### Adicionado
