@@ -100,6 +100,47 @@ describe("content type", () => {
   );
 });
 
+describe("body limit", () => {
+  it("responds 413 above bodyLimit and writes nothing", async () => {
+    const limited = buildApp({ blobDir, bodyLimit: 16 });
+    try {
+      const over = Buffer.alloc(17, 0x61);
+      const atLimit = Buffer.alloc(16, 0x62);
+
+      const overRes = await limited.inject({
+        method: "PUT",
+        url: `/blobs/${hashContent(over)}`,
+        headers: { "content-type": "application/octet-stream" },
+        payload: over,
+      });
+      expect(overRes.statusCode).toBe(413);
+      expect(await readdir(blobDir)).toEqual([]);
+
+      const atLimitRes = await limited.inject({
+        method: "PUT",
+        url: `/blobs/${hashContent(atLimit)}`,
+        headers: { "content-type": "application/octet-stream" },
+        payload: atLimit,
+      });
+      expect(atLimitRes.statusCode).toBe(201);
+    } finally {
+      await limited.close();
+    }
+  });
+
+  it("defaults bodyLimit to 16 MiB", async () => {
+    const twoMiB = Buffer.alloc(2 * 1024 * 1024, 0x61);
+    const overDefault = Buffer.alloc(16 * 1024 * 1024 + 1, 0x62);
+
+    const twoMiBRes = await put(hashContent(twoMiB), twoMiB);
+    expect(twoMiBRes.statusCode).toBe(201);
+
+    const overRes = await put(hashContent(overDefault), overDefault);
+    expect(overRes.statusCode).toBe(413);
+    expect(await readdir(blobDir)).toEqual([hashContent(twoMiB)]);
+  });
+});
+
 describe("empty blob", () => {
   it("accepts the empty blob", async () => {
     const hash =

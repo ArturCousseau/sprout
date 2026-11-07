@@ -5,6 +5,9 @@
  * `content-type: application/octet-stream`.
  *   201  blob created (no body)
  *   400  :hash is not 64 lowercase hex chars, or the body does not hash to :hash
+ *   413  body larger than `bodyLimit` (option of buildApp, default
+ *        DEFAULT_BODY_LIMIT = 16 MiB; Fastify's own default would be 1 MiB).
+ *        Fastify answers this itself, before the handler runs.
  *   415  no `content-type: application/octet-stream`. Fastify answers this
  *        itself when there is a body; with an empty body and no content-type
  *        it skips the parser and hands us `body === undefined`, so the
@@ -37,8 +40,13 @@ function sendError(reply: FastifyReply, statusCode: number, message: string) {
     .send({ statusCode, error: STATUS_CODES[statusCode], message });
 }
 
-export function buildApp({ blobDir }: AppOptions): FastifyInstance {
-  const app = Fastify();
+export const DEFAULT_BODY_LIMIT = 16 * 1024 * 1024;
+
+export function buildApp({
+  blobDir,
+  bodyLimit = DEFAULT_BODY_LIMIT,
+}: AppOptions): FastifyInstance {
+  const app = Fastify({ bodyLimit });
 
   app.addHook("onReady", async () => {
     await mkdir(blobDir, { recursive: true });
