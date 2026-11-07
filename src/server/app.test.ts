@@ -1,7 +1,7 @@
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { inflateSync } from "node:zlib";
+import { deflateSync, inflateSync } from "node:zlib";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { hashContent } from "../core/hash.js";
@@ -42,6 +42,43 @@ describe("PUT /blobs/:hash", () => {
     expect(app.server.listening).toBe(false);
     expect(await readdir(blobDir)).toEqual([hash]);
   });
+
+  it("PUT with a mismatched hash responds 400 and writes nothing", async () => {
+    const hash = hashContent("the content the client claims");
+
+    const res = await put(hash, Buffer.from("the content actually sent"));
+
+    expect(res.statusCode).toBe(400);
+    expect(await readdir(blobDir)).toEqual([]);
+  });
+});
+
+describe("hash format", () => {
+  const body = Buffer.from("some content");
+  const valid = hashContent(body);
+
+  it.each([
+    ["uppercase", valid.toUpperCase()],
+    ["too short", valid.slice(0, 63)],
+    ["encoded ../", "..%2Fescape"],
+  ])(
+    "rejects malformed hashes with 400 on PUT and GET (%s)",
+    async (_case, hash) => {
+      // A file next to blobDir that "../escape" would reach.
+      const escapePath = join(root, "escape");
+      const secret = deflateSync("secret");
+      await writeFile(escapePath, secret);
+
+      const putRes = await put(hash, body);
+      const getRes = await app.inject({ method: "GET", url: `/blobs/${hash}` });
+
+      expect(putRes.statusCode).toBe(400);
+      expect(getRes.statusCode).toBe(400);
+      expect((await readdir(root)).sort()).toEqual(["blobs", "escape"]);
+      expect(await readFile(escapePath)).toEqual(secret);
+      expect(await readdir(blobDir)).toEqual([]);
+    },
+  );
 });
 
 describe("GET /blobs/:hash", () => {

@@ -1,10 +1,36 @@
+/**
+ * HTTP API of the blob store. Status codes:
+ *
+ * PUT /blobs/:hash — body is the raw blob; the request must send
+ * `content-type: application/octet-stream`.
+ *   201  blob created (no body)
+ *   400  :hash is not 64 lowercase hex chars, or the body does not hash to :hash
+ *
+ * GET /blobs/:hash
+ *   200  raw blob, `content-type: application/octet-stream`
+ *   400  :hash is not 64 lowercase hex chars
+ *   404  no blob with this hash
+ *
+ * Errors use Fastify's own error shape: `{ statusCode, error, message }`.
+ *
+ * A literal `../` in the URL (`/blobs/../x`) never reaches these handlers: the
+ * router resolves the path first (`/x`) and answers 404 by itself. An encoded
+ * `..%2F` does reach them as part of :hash and is rejected by the hash format.
+ */
 import { mkdir } from "node:fs/promises";
-import Fastify, { type FastifyInstance } from "fastify";
+import { STATUS_CODES } from "node:http";
+import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { getBlob, putBlob } from "./blob-store.js";
 
 export interface AppOptions {
   blobDir: string;
   bodyLimit?: number;
+}
+
+function sendError(reply: FastifyReply, statusCode: number, message: string) {
+  return reply
+    .code(statusCode)
+    .send({ statusCode, error: STATUS_CODES[statusCode], message });
 }
 
 export function buildApp({ blobDir }: AppOptions): FastifyInstance {
@@ -25,7 +51,14 @@ export function buildApp({ blobDir }: AppOptions): FastifyInstance {
   app.put<{ Params: { hash: string }; Body: Buffer }>(
     "/blobs/:hash",
     async (request, reply) => {
-      await putBlob(blobDir, request.params.hash, request.body);
+      const { hash } = request.params;
+      const result = await putBlob(blobDir, hash, request.body);
+      if (result === "invalid-hash") {
+        return sendError(reply, 400, `invalid hash: ${hash}`);
+      }
+      if (result === "hash-mismatch") {
+        return sendError(reply, 400, `body does not match hash: ${hash}`);
+      }
       return reply.code(201).send();
     },
   );
@@ -33,15 +66,15 @@ export function buildApp({ blobDir }: AppOptions): FastifyInstance {
   app.get<{ Params: { hash: string } }>(
     "/blobs/:hash",
     async (request, reply) => {
-      const content = await getBlob(blobDir, request.params.hash);
-      if (content === undefined) {
-        return reply.code(404).send({
-          statusCode: 404,
-          error: "Not Found",
-          message: `blob not found: ${request.params.hash}`,
-        });
+      const { hash } = request.params;
+      const result = await getBlob(blobDir, hash);
+      if (result === "invalid-hash") {
+        return sendError(reply, 400, `invalid hash: ${hash}`);
       }
-      return reply.type("application/octet-stream").send(content);
+      if (result === "not-found") {
+        return sendError(reply, 404, `blob not found: ${hash}`);
+      }
+      return reply.type("application/octet-stream").send(result);
     },
   );
 
