@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { deflate, inflate } from "node:zlib";
@@ -9,7 +9,7 @@ const inflateAsync = promisify(inflate);
 
 const HASH_FORMAT = /^[0-9a-f]{64}$/;
 
-export type PutResult = "created" | "invalid-hash" | "hash-mismatch";
+export type PutResult = "created" | "exists" | "invalid-hash" | "hash-mismatch";
 export type GetResult = Buffer | "invalid-hash" | "not-found";
 
 export async function putBlob(
@@ -23,7 +23,16 @@ export async function putBlob(
   if (hashContent(content) !== hash) {
     return "hash-mismatch";
   }
-  await writeFile(join(blobDir, hash), await deflateAsync(content));
+  const path = join(blobDir, hash);
+  try {
+    await stat(path);
+    return "exists";
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
+  }
+  await writeFile(path, await deflateAsync(content));
   return "created";
 }
 

@@ -100,6 +100,32 @@ describe("content type", () => {
   );
 });
 
+describe("immutability", () => {
+  it("never overwrites an existing blob file", async () => {
+    const body = Buffer.from("real content");
+    const hash = hashContent(body);
+    const sentinel = Buffer.from("SENTINEL: must survive the PUT");
+    await app.ready(); // runs onReady, which creates blobDir
+    await writeFile(join(blobDir, hash), sentinel);
+
+    const res = await put(hash, body);
+
+    expect(await readFile(join(blobDir, hash))).toEqual(sentinel);
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("responds 200 to a repeated PUT of the same blob", async () => {
+    const body = Buffer.from("stored twice");
+    const hash = hashContent(body);
+
+    const first = await put(hash, body);
+    const second = await put(hash, body);
+
+    expect(first.statusCode).toBe(201);
+    expect(second.statusCode).toBe(200);
+  });
+});
+
 describe("body limit", () => {
   it("responds 413 above bodyLimit and writes nothing", async () => {
     const limited = buildApp({ blobDir, bodyLimit: 16 });

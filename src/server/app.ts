@@ -4,6 +4,7 @@
  * PUT /blobs/:hash — body is the raw blob; the request must send
  * `content-type: application/octet-stream`.
  *   201  blob created (no body)
+ *   200  blob already existed; the stored file is left untouched (no body)
  *   400  :hash is not 64 lowercase hex chars, or the body does not hash to :hash
  *   413  body larger than `bodyLimit` (option of buildApp, default
  *        DEFAULT_BODY_LIMIT = 16 MiB; Fastify's own default would be 1 MiB).
@@ -78,7 +79,7 @@ export function buildApp({
       if (result === "hash-mismatch") {
         return sendError(reply, 400, `body does not match hash: ${hash}`);
       }
-      return reply.code(201).send();
+      return reply.code(result === "created" ? 201 : 200).send();
     },
   );
 
