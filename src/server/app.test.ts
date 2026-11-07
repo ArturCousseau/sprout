@@ -81,6 +81,20 @@ describe("hash format", () => {
   );
 });
 
+describe("empty blob", () => {
+  it("accepts the empty blob", async () => {
+    const hash =
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+    const putRes = await put(hash, Buffer.alloc(0));
+    const getRes = await app.inject({ method: "GET", url: `/blobs/${hash}` });
+
+    expect(putRes.statusCode).toBe(201);
+    expect(getRes.statusCode).toBe(200);
+    expect(getRes.rawPayload).toEqual(Buffer.alloc(0));
+  });
+});
+
 describe("GET /blobs/:hash", () => {
   it("GET returns the exact bytes for all 256 byte values", async () => {
     const body = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
