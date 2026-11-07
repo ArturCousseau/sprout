@@ -16,6 +16,11 @@ para a issue e para o PR de onde veio. O processo de release está no
   normalização e validação de caminhos e o ADR 0002, sobre o modelo de dados
   ([#8](https://github.com/ArturCousseau/sprout/issues/8),
   [#29](https://github.com/ArturCousseau/sprout/pull/29)).
+- Servidor Fastify com blob store em disco: `PUT` e `GET /blobs/:hash`,
+  blobs comprimidos com zlib e identificados pelo SHA-256 do conteúdo,
+  publicados com `link` sem nunca sobrescrever, e o script `pnpm start`
+  ([#9](https://github.com/ArturCousseau/sprout/issues/9),
+  [#32](https://github.com/ArturCousseau/sprout/pull/32)).
 
 ### Alterado
 
