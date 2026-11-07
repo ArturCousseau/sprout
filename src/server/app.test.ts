@@ -81,6 +81,25 @@ describe("hash format", () => {
   );
 });
 
+describe("content type", () => {
+  it.each([
+    ["empty body", Buffer.alloc(0)],
+    ["non-empty body", Buffer.from("some content")],
+  ])(
+    "PUT without content-type responds 415 and writes nothing (%s)",
+    async (_case, body) => {
+      const res = await app.inject({
+        method: "PUT",
+        url: `/blobs/${hashContent(body)}`,
+        payload: body,
+      });
+
+      expect(res.statusCode).toBe(415);
+      expect(await readdir(blobDir)).toEqual([]);
+    },
+  );
+});
+
 describe("empty blob", () => {
   it("accepts the empty blob", async () => {
     const hash =

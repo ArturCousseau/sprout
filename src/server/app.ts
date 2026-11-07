@@ -5,6 +5,10 @@
  * `content-type: application/octet-stream`.
  *   201  blob created (no body)
  *   400  :hash is not 64 lowercase hex chars, or the body does not hash to :hash
+ *   415  no `content-type: application/octet-stream`. Fastify answers this
+ *        itself when there is a body; with an empty body and no content-type
+ *        it skips the parser and hands us `body === undefined`, so the
+ *        handler checks for a Buffer and answers 415 before looking at :hash.
  *
  * GET /blobs/:hash
  *   200  raw blob, `content-type: application/octet-stream`
@@ -48,10 +52,17 @@ export function buildApp({ blobDir }: AppOptions): FastifyInstance {
     },
   );
 
-  app.put<{ Params: { hash: string }; Body: Buffer }>(
+  app.put<{ Params: { hash: string }; Body: Buffer | undefined }>(
     "/blobs/:hash",
     async (request, reply) => {
       const { hash } = request.params;
+      if (!Buffer.isBuffer(request.body)) {
+        return sendError(
+          reply,
+          415,
+          "content-type must be application/octet-stream",
+        );
+      }
       const result = await putBlob(blobDir, hash, request.body);
       if (result === "invalid-hash") {
         return sendError(reply, 400, `invalid hash: ${hash}`);
