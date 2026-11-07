@@ -126,6 +126,24 @@ describe("immutability", () => {
   });
 });
 
+describe("concurrency", () => {
+  it("20 concurrent PUTs create the blob exactly once", async () => {
+    const body = Buffer.from("written by twenty agents at once");
+    const hash = hashContent(body);
+
+    const responses = await Promise.all(
+      Array.from({ length: 20 }, () => put(hash, body)),
+    );
+    const statuses = responses.map((res) => res.statusCode);
+
+    expect(statuses.filter((status) => status === 201)).toHaveLength(1);
+    expect(statuses.filter((status) => status === 200)).toHaveLength(19);
+    const getRes = await app.inject({ method: "GET", url: `/blobs/${hash}` });
+    expect(getRes.rawPayload).toEqual(body);
+    expect(await readdir(blobDir)).toEqual([hash]);
+  });
+});
+
 describe("body limit", () => {
   it("responds 413 above bodyLimit and writes nothing", async () => {
     const limited = buildApp({ blobDir, bodyLimit: 16 });
