@@ -98,6 +98,20 @@ describe("content type", () => {
       expect(await readdir(blobDir)).toEqual([]);
     },
   );
+
+  it("PUT with content-type text/plain responds 415 and writes nothing", async () => {
+    const body = Buffer.from("plain text body");
+
+    const res = await app.inject({
+      method: "PUT",
+      url: `/blobs/${hashContent(body)}`,
+      headers: { "content-type": "text/plain" },
+      payload: body,
+    });
+
+    expect(res.statusCode).toBe(415);
+    expect(await readdir(blobDir)).toEqual([]);
+  });
 });
 
 describe("immutability", () => {
