@@ -1,4 +1,14 @@
+/**
+ * SQLite metadata: changesets, their changes and the main ref. Does not know
+ * about HTTP. All of the project's SQL lives here, and every query takes its
+ * values as `?` parameters. Design notes in docs/adr/0004.
+ *
+ * Tables: `changesets` (diff against the first parent, never a tree),
+ * `changes` (one row per changed path; `blob_hash` NULL = file removed) and
+ * `refs` (only `main`).
+ */
 import Database from "better-sqlite3";
+import type { Change, Changeset } from "../core/changeset.js";
 
 export type Db = Database.Database;
 
@@ -48,4 +58,34 @@ export function openDatabase(path: string): Db {
     db.close();
     throw error;
   }
+}
+
+/** Id of the changeset main points at. openDatabase guarantees main exists. */
+export function readMainHead(db: Db): number {
+  const head = db
+    .prepare<[], number>("SELECT value FROM refs WHERE name = 'main'")
+    .pluck()
+    .get();
+  if (head === undefined) {
+    throw new Error("the main ref is missing");
+  }
+  return head;
+}
+
+/** The changeset with this id, with its changes sorted by path. */
+export function readChangeset(db: Db, id: number): Changeset | undefined {
+  const row = db
+    .prepare<[number], Omit<Changeset, "changes">>(
+      "SELECT id, parent, author, message, timestamp FROM changesets WHERE id = ?",
+    )
+    .get(id);
+  if (!row) {
+    return undefined;
+  }
+  const changes = db
+    .prepare<[number], Change>(
+      "SELECT path, blob_hash AS blobHash FROM changes WHERE changeset_id = ? ORDER BY path",
+    )
+    .all(id);
+  return { ...row, changes };
 }
