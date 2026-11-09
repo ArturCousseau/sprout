@@ -6,19 +6,23 @@ import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { hashContent } from "../core/hash.js";
 import { buildApp } from "./app.js";
+import { openDatabase, type Db } from "./db.js";
 
 let root: string;
 let blobDir: string;
+let db: Db;
 let app: FastifyInstance;
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "sprout-blobs-"));
   blobDir = join(root, "blobs");
-  app = buildApp({ blobDir });
+  db = openDatabase(":memory:");
+  app = buildApp({ blobDir, db });
 });
 
 afterEach(async () => {
   await app.close();
+  db.close();
   await rm(root, { recursive: true, force: true });
 });
 
@@ -160,7 +164,7 @@ describe("concurrency", () => {
 
 describe("body limit", () => {
   it("responds 413 above bodyLimit and writes nothing", async () => {
-    const limited = buildApp({ blobDir, bodyLimit: 16 });
+    const limited = buildApp({ blobDir, db, bodyLimit: 16 });
     try {
       const over = Buffer.alloc(17, 0x61);
       const atLimit = Buffer.alloc(16, 0x62);
@@ -252,4 +256,100 @@ describe("blob file on disk", () => {
     expect(file.length).toBeLessThan(body.length);
     expect(inflateSync(file)).toEqual(body);
   });
+});
+
+function plantChangeset(id: number, parent: number) {
+  db.prepare(
+    "INSERT INTO changesets (id, parent, author, message, timestamp) VALUES (?, ?, 'agent-1', 'planted', '2026-11-06T12:00:00.000Z')",
+  ).run(id, parent);
+}
+
+describe("GET /refs/main", () => {
+  it("GET /refs/main returns id 1 on a new database", async () => {
+    const res = await app.inject({ method: "GET", url: "/refs/main" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ id: 1 });
+  });
+
+  it("GET /refs/main follows main moved by SQL", async () => {
+    plantChangeset(2, 1);
+    db.prepare("UPDATE refs SET value = 2 WHERE name = 'main'").run();
+
+    const res = await app.inject({ method: "GET", url: "/refs/main" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ id: 2 });
+  });
+});
+
+describe("GET /changesets/:id", () => {
+  it("GET /changesets/1 returns the root", async () => {
+    const res = await app.inject({ method: "GET", url: "/changesets/1" });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json<Record<string, unknown>>();
+    expect(body).toEqual({
+      id: 1,
+      parent: null,
+      author: "sprout",
+      message: "root",
+      timestamp: body.timestamp,
+      changes: [],
+    });
+    expect(typeof body.timestamp).toBe("string");
+  });
+
+  it("GET /changesets/:id returns changes sorted by path, null for removals", async () => {
+    const hash = hashContent("new content of a.txt");
+    plantChangeset(2, 1);
+    const insert = db.prepare(
+      "INSERT INTO changes (changeset_id, path, blob_hash) VALUES (2, ?, ?)",
+    );
+    insert.run("b.txt", null);
+    insert.run("a.txt", hash);
+
+    const res = await app.inject({ method: "GET", url: "/changesets/2" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      id: 2,
+      parent: 1,
+      author: "agent-1",
+      message: "planted",
+      timestamp: "2026-11-06T12:00:00.000Z",
+      changes: [
+        { path: "a.txt", blobHash: hash },
+        { path: "b.txt", blobHash: null },
+      ],
+    });
+  });
+
+  it.each(["abc", "0", "-1", "1.5", "01", "1e3", "9007199254740992"])(
+    "GET /changesets/%s responds 400",
+    async (id) => {
+      const res = await app.inject({ method: "GET", url: `/changesets/${id}` });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({
+        statusCode: 400,
+        error: "Bad Request",
+        message: `invalid changeset id: ${id}`,
+      });
+    },
+  );
+
+  it.each(["2", "9007199254740991"])(
+    "GET of a missing changeset responds 404 (%s)",
+    async (id) => {
+      const res = await app.inject({ method: "GET", url: `/changesets/${id}` });
+
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toEqual({
+        statusCode: 404,
+        error: "Not Found",
+        message: `changeset not found: ${id}`,
+      });
+    },
+  );
 });

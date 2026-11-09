@@ -1,5 +1,7 @@
 /**
- * HTTP API of the blob store. Status codes:
+ * HTTP API of the server: blobs, the main ref and changesets. The database
+ * connection comes from the caller (`db` option), which also closes it.
+ * Status codes:
  *
  * PUT /blobs/:hash — body is the raw blob; the request must send
  * `content-type: application/octet-stream`.
@@ -19,6 +21,17 @@
  *   400  :hash is not 64 lowercase hex chars
  *   404  no blob with this hash
  *
+ * GET /refs/main
+ *   200  `{ id }`, the id of the changeset main points at
+ *
+ * GET /changesets/:id
+ *   200  the changeset in the core `Changeset` shape, changes sorted by path
+ *   400  :id is not a positive decimal integer without a leading zero, or is
+ *        above Number.MAX_SAFE_INTEGER
+ *   404  no changeset with this id
+ *   414  :id longer than Fastify's maxParamLength (100 chars). Fastify answers
+ *        this itself, before the handler runs.
+ *
  * Errors use Fastify's own error shape: `{ statusCode, error, message }`.
  *
  * A literal `../` in the URL (`/blobs/../x`) never reaches these handlers: the
@@ -29,9 +42,11 @@ import { mkdir } from "node:fs/promises";
 import { STATUS_CODES } from "node:http";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { getBlob, putBlob } from "./blob-store.js";
+import { readChangeset, readMainHead, type Db } from "./db.js";
 
 export interface AppOptions {
   blobDir: string;
+  db: Db;
   bodyLimit?: number;
 }
 
@@ -43,8 +58,12 @@ function sendError(reply: FastifyReply, statusCode: number, message: string) {
 
 export const DEFAULT_BODY_LIMIT = 16 * 1024 * 1024;
 
+/** Positive decimal integer, no leading zero. */
+const CHANGESET_ID_FORMAT = /^[1-9][0-9]*$/;
+
 export function buildApp({
   blobDir,
+  db,
   bodyLimit = DEFAULT_BODY_LIMIT,
 }: AppOptions): FastifyInstance {
   const app = Fastify({ bodyLimit });
@@ -97,6 +116,21 @@ export function buildApp({
       return reply.type("application/octet-stream").send(result);
     },
   );
+
+  app.get("/refs/main", () => ({ id: readMainHead(db) }));
+
+  app.get<{ Params: { id: string } }>("/changesets/:id", (request, reply) => {
+    const { id } = request.params;
+    const numericId = Number(id);
+    if (!CHANGESET_ID_FORMAT.test(id) || !Number.isSafeInteger(numericId)) {
+      return sendError(reply, 400, `invalid changeset id: ${id}`);
+    }
+    const changeset = readChangeset(db, numericId);
+    if (!changeset) {
+      return sendError(reply, 404, `changeset not found: ${id}`);
+    }
+    return changeset;
+  });
 
   return app;
 }
