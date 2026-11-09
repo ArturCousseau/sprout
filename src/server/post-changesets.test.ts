@@ -300,4 +300,23 @@ describe("POST /changesets", () => {
     });
     expect(snapshot()).toEqual(before);
   });
+
+  it("responds 409 when parent is not the head of main", async () => {
+    // Another agent's changeset 2 (parent 1) is already on main.
+    db.prepare(
+      "INSERT INTO changesets (id, parent, author, message, timestamp) VALUES (2, 1, 'agent-2', 'planted', '2026-11-09T12:00:00.000Z')",
+    ).run();
+    db.prepare("UPDATE refs SET value = 2 WHERE name = 'main'").run();
+    const before = snapshot();
+
+    const res = await post({ ...valid, parent: 1 });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({
+      statusCode: 409,
+      error: "Conflict",
+      message: "parent is not the head of main",
+    });
+    expect(snapshot()).toEqual(before);
+  });
 });

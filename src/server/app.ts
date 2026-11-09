@@ -270,6 +270,11 @@ export function buildApp({
     // request runs in between (ADR 0004, decision 5). All asynchronous checks
     // must finish above this line.
     const head = readMainHead(db);
+    if (parent !== head) {
+      // Provisional: #12 replaces this with reparent and a 409 that lists
+      // the conflicting paths.
+      return sendError(reply, 409, "parent is not the head of main");
+    }
     const result = createChangeset(db, head, parsed.value);
     if (result.kind === "stale-head") {
       // Unreachable while reading the head and the compare-and-swap run in
