@@ -245,6 +245,10 @@ export function buildApp({
     if (!parsed.ok) {
       return sendError(reply, 400, parsed.message);
     }
+    const { parent } = parsed.value;
+    if (!readChangeset(db, parent)) {
+      return sendError(reply, 404, `changeset not found: ${parent}`);
+    }
 
     // Each blob is checked once, even when several paths share it. Removals
     // (blobHash null) do not touch the blob store.

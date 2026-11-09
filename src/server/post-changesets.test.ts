@@ -281,4 +281,23 @@ describe("POST /changesets", () => {
     expect(json.message).not.toContain(present);
     expect(snapshot()).toEqual(before);
   });
+
+  it.each([
+    ["99", 99],
+    // The next id on a database with only the root: without the check, the
+    // foreign key accepts a changeset that is its own parent.
+    ["2, the next id", 2],
+  ])("responds 404 when parent does not exist (%s)", async (_case, parent) => {
+    const before = snapshot();
+
+    const res = await post({ ...valid, parent });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({
+      statusCode: 404,
+      error: "Not Found",
+      message: `changeset not found: ${parent}`,
+    });
+    expect(snapshot()).toEqual(before);
+  });
 });
