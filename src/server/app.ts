@@ -41,6 +41,8 @@
 import { mkdir } from "node:fs/promises";
 import { STATUS_CODES } from "node:http";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
+import type { Change } from "../core/changeset.js";
+import { InvalidPathError, normalizePath } from "../core/path.js";
 import { getBlob, putBlob } from "./blob-store.js";
 import {
   createChangeset,
@@ -139,7 +141,22 @@ export function buildApp({
   });
 
   app.post<{ Body: NewChangeset }>("/changesets", (request, reply) => {
-    const { parent, author, message, changes } = request.body;
+    const { parent, author, message } = request.body;
+    const changes: Change[] = [];
+    for (const change of request.body.changes) {
+      try {
+        changes.push({ ...change, path: normalizePath(change.path) });
+      } catch (error) {
+        if (error instanceof InvalidPathError) {
+          return sendError(
+            reply,
+            400,
+            `invalid path "${change.path}": ${error.message}`,
+          );
+        }
+        throw error;
+      }
+    }
     const head = readMainHead(db);
     const result = createChangeset(db, head, {
       parent,

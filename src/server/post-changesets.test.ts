@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Changeset } from "../core/changeset.js";
 import { hashContent } from "../core/hash.js";
 import { buildApp } from "./app.js";
-import { openDatabase, type Db } from "./db.js";
+import { openDatabase, readMainHead, type Db } from "./db.js";
 
 let root: string;
 let db: Db;
@@ -38,6 +38,14 @@ async function storeBlob(content: string): Promise<string> {
   });
   expect(res.statusCode).toBe(201);
   return hash;
+}
+
+/** What a rejected request must leave untouched. */
+function snapshot() {
+  return {
+    changesets: db.prepare("SELECT count(*) FROM changesets").pluck().get(),
+    main: readMainHead(db),
+  };
 }
 
 function post(body: unknown) {
@@ -84,4 +92,43 @@ describe("POST /changesets", () => {
     expect(stored.statusCode).toBe(200);
     expect(stored.json()).toEqual(created);
   });
+
+  it("stores and returns normalized paths", async () => {
+    const res = await post({
+      parent: 1,
+      author: "agent-1",
+      message: "dot segment",
+      changes: [{ path: "src/./a.ts", blobHash: null }],
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.json<Changeset>().changes).toEqual([
+      { path: "src/a.ts", blobHash: null },
+    ]);
+    const stored = await app.inject({ method: "GET", url: "/changesets/2" });
+    expect(stored.json<Changeset>().changes).toEqual([
+      { path: "src/a.ts", blobHash: null },
+    ]);
+  });
+
+  it.each(["../x", "/abs", "a\\b", ""])(
+    "rejects a path normalizePath refuses (%s)",
+    async (path) => {
+      const before = snapshot();
+
+      const res = await post({
+        parent: 1,
+        author: "agent-1",
+        message: "bad path",
+        changes: [{ path, blobHash: null }],
+      });
+
+      expect(res.statusCode).toBe(400);
+      const body = res.json<Record<string, unknown>>();
+      expect(body.statusCode).toBe(400);
+      expect(body.error).toBe("Bad Request");
+      expect(body.message).toContain(`invalid path "${path}"`);
+      expect(snapshot()).toEqual(before);
+    },
+  );
 });
