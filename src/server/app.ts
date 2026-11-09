@@ -43,7 +43,7 @@ import { STATUS_CODES } from "node:http";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import type { Change } from "../core/changeset.js";
 import { InvalidPathError, normalizePath } from "../core/path.js";
-import { getBlob, putBlob } from "./blob-store.js";
+import { getBlob, HASH_FORMAT, putBlob } from "./blob-store.js";
 import {
   createChangeset,
   readChangeset,
@@ -68,6 +68,80 @@ export const DEFAULT_BODY_LIMIT = 16 * 1024 * 1024;
 
 /** Positive decimal integer, no leading zero. */
 const CHANGESET_ID_FORMAT = /^[1-9][0-9]*$/;
+
+type ParseResult =
+  { ok: true; value: NewChangeset } | { ok: false; message: string };
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value !== "";
+}
+
+function isBlobHash(value: unknown): value is string | null {
+  return (
+    value === null || (typeof value === "string" && HASH_FORMAT.test(value))
+  );
+}
+
+/**
+ * Checks a POST /changesets body by hand (no Fastify schema: its default Ajv
+ * options coerce "2" to 2 and silently drop unknown fields) and normalizes
+ * the paths.
+ */
+function parseChangesetBody(body: unknown): ParseResult {
+  const fail = (message: string): ParseResult => ({ ok: false, message });
+  if (!isObject(body)) {
+    return fail("body must be a JSON object");
+  }
+  const { parent, author, message, changes } = body;
+  if (
+    typeof parent !== "number" ||
+    !Number.isSafeInteger(parent) ||
+    parent < 1
+  ) {
+    return fail("parent must be a positive safe integer");
+  }
+  if (!isNonEmptyString(author)) {
+    return fail("author must be a non-empty string");
+  }
+  if (!isNonEmptyString(message)) {
+    return fail("message must be a non-empty string");
+  }
+  if (!Array.isArray(changes) || changes.length === 0) {
+    return fail("changes must be a non-empty array");
+  }
+  const items: unknown[] = changes;
+  const normalized: Change[] = [];
+  for (const [index, item] of items.entries()) {
+    if (!isObject(item)) {
+      return fail(`changes[${index}] must be an object`);
+    }
+    const { path, blobHash } = item;
+    if (typeof path !== "string") {
+      return fail(`changes[${index}].path must be a string`);
+    }
+    if (!isBlobHash(blobHash)) {
+      return fail(
+        `changes[${index}].blobHash must be null or 64 lowercase hex chars`,
+      );
+    }
+    try {
+      normalized.push({ path: normalizePath(path), blobHash });
+    } catch (error) {
+      if (error instanceof InvalidPathError) {
+        return fail(`invalid path "${path}": ${error.message}`);
+      }
+      throw error;
+    }
+  }
+  return {
+    ok: true,
+    value: { parent, author, message, changes: normalized },
+  };
+}
 
 export function buildApp({
   blobDir,
@@ -140,30 +214,13 @@ export function buildApp({
     return changeset;
   });
 
-  app.post<{ Body: NewChangeset }>("/changesets", (request, reply) => {
-    const { parent, author, message } = request.body;
-    const changes: Change[] = [];
-    for (const change of request.body.changes) {
-      try {
-        changes.push({ ...change, path: normalizePath(change.path) });
-      } catch (error) {
-        if (error instanceof InvalidPathError) {
-          return sendError(
-            reply,
-            400,
-            `invalid path "${change.path}": ${error.message}`,
-          );
-        }
-        throw error;
-      }
+  app.post<{ Body: unknown }>("/changesets", (request, reply) => {
+    const parsed = parseChangesetBody(request.body);
+    if (!parsed.ok) {
+      return sendError(reply, 400, parsed.message);
     }
     const head = readMainHead(db);
-    const result = createChangeset(db, head, {
-      parent,
-      author,
-      message,
-      changes,
-    });
+    const result = createChangeset(db, head, parsed.value);
     if (result.kind === "stale-head") {
       // Unreachable while reading the head and the compare-and-swap run in
       // one synchronous stretch (ADR 0004, decision 5): a server bug.

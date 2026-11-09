@@ -48,7 +48,11 @@ function snapshot() {
   };
 }
 
+/** POSTs `body` as JSON; `undefined` sends no body and no content-type. */
 function post(body: unknown) {
+  if (body === undefined) {
+    return app.inject({ method: "POST", url: "/changesets" });
+  }
   return app.inject({
     method: "POST",
     url: "/changesets",
@@ -131,4 +135,75 @@ describe("POST /changesets", () => {
       expect(snapshot()).toEqual(before);
     },
   );
+
+  const valid = {
+    parent: 1,
+    author: "agent-1",
+    message: "valid message",
+    changes: [{ path: "a.txt", blobHash: null }],
+  };
+  const hash = hashContent("some content");
+  const withChange = (change: unknown) => ({ ...valid, changes: [change] });
+  const without = (key: keyof typeof valid) => {
+    const copy: Record<string, unknown> = { ...valid };
+    delete copy[key];
+    return copy;
+  };
+
+  it.each<[string, unknown]>([
+    ["no body", undefined],
+    ["null body", null],
+    ["array body", []],
+    ["string body", "s"],
+    ["number body", 5],
+    ['parent "2" (string)', { ...valid, parent: "2" }],
+    ["parent 0", { ...valid, parent: 0 }],
+    ["parent 1.5", { ...valid, parent: 1.5 }],
+    ["parent null", { ...valid, parent: null }],
+    ["parent -1", { ...valid, parent: -1 }],
+    ["parent 2**53", { ...valid, parent: 2 ** 53 }],
+    ["parent missing", without("parent")],
+    ["author 7", { ...valid, author: 7 }],
+    ['author ""', { ...valid, author: "" }],
+    ["author missing", without("author")],
+    ["message 7", { ...valid, message: 7 }],
+    ['message ""', { ...valid, message: "" }],
+    ["message missing", without("message")],
+    [
+      "changes object",
+      { ...valid, changes: { path: "a.txt", blobHash: null } },
+    ],
+    ["changes empty", { ...valid, changes: [] }],
+    ["changes missing", without("changes")],
+    ["item not an object", withChange("a.txt")],
+    ["item without path", withChange({ blobHash: null })],
+    ["item path 5", withChange({ path: 5, blobHash: null })],
+    ["blobHash missing", withChange({ path: "a.txt" })],
+    [
+      "blobHash uppercase",
+      withChange({ path: "a.txt", blobHash: hash.toUpperCase() }),
+    ],
+    [
+      "blobHash 63 chars",
+      withChange({ path: "a.txt", blobHash: hash.slice(0, 63) }),
+    ],
+    ["blobHash 5", withChange({ path: "a.txt", blobHash: 5 })],
+  ])("rejects an invalid body with 400 (%s)", async (_case, body) => {
+    const before = snapshot();
+
+    const res = await post(body);
+
+    expect(res.statusCode).toBe(400);
+    const json = res.json<Record<string, unknown>>();
+    expect(Object.keys(json).sort()).toEqual([
+      "error",
+      "message",
+      "statusCode",
+    ]);
+    expect(json.statusCode).toBe(400);
+    expect(json.error).toBe("Bad Request");
+    expect(typeof json.message).toBe("string");
+    expect(json.message).not.toBe("");
+    expect(snapshot()).toEqual(before);
+  });
 });
