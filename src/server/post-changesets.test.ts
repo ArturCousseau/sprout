@@ -206,4 +206,26 @@ describe("POST /changesets", () => {
     expect(json.message).not.toBe("");
     expect(snapshot()).toEqual(before);
   });
+
+  it.each<[string, unknown]>([
+    ["id", { ...valid, id: 99 }],
+    ["timestamp", { ...valid, timestamp: "2026-11-09T00:00:00.000Z" }],
+    ["unknown top-level field", { ...valid, foo: "bar" }],
+    // "constructor" in {} is true through the prototype.
+    ["constructor at the top level", { ...valid, constructor: "x" }],
+    [
+      "unknown field in an item",
+      withChange({ path: "a.txt", blobHash: null, mode: "100644" }),
+    ],
+  ])("rejects server-assigned and unknown fields (%s)", async (_case, body) => {
+    const before = snapshot();
+
+    const res = await post(body);
+
+    expect(res.statusCode).toBe(400);
+    const json = res.json<Record<string, unknown>>();
+    expect(json.statusCode).toBe(400);
+    expect(json.error).toBe("Bad Request");
+    expect(snapshot()).toEqual(before);
+  });
 });

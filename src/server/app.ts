@@ -86,6 +86,13 @@ function isBlobHash(value: unknown): value is string | null {
   );
 }
 
+// A Set, not an object with `in`: "constructor" in {} is true through the
+// prototype.
+const BODY_FIELDS = new Set(["parent", "author", "message", "changes"]);
+const CHANGE_FIELDS = new Set(["path", "blobHash"]);
+/** Fields the server assigns (principle 3); the client may not send them. */
+const SERVER_FIELDS = new Set(["id", "timestamp"]);
+
 /**
  * Checks a POST /changesets body by hand (no Fastify schema: its default Ajv
  * options coerce "2" to 2 and silently drop unknown fields) and normalizes
@@ -95,6 +102,14 @@ function parseChangesetBody(body: unknown): ParseResult {
   const fail = (message: string): ParseResult => ({ ok: false, message });
   if (!isObject(body)) {
     return fail("body must be a JSON object");
+  }
+  for (const key of Object.keys(body)) {
+    if (SERVER_FIELDS.has(key)) {
+      return fail(`${key} is assigned by the server`);
+    }
+    if (!BODY_FIELDS.has(key)) {
+      return fail(`unknown field: ${key}`);
+    }
   }
   const { parent, author, message, changes } = body;
   if (
@@ -118,6 +133,10 @@ function parseChangesetBody(body: unknown): ParseResult {
   for (const [index, item] of items.entries()) {
     if (!isObject(item)) {
       return fail(`changes[${index}] must be an object`);
+    }
+    const unknown = Object.keys(item).find((key) => !CHANGE_FIELDS.has(key));
+    if (unknown !== undefined) {
+      return fail(`unknown field: changes[${index}].${unknown}`);
     }
     const { path, blobHash } = item;
     if (typeof path !== "string") {
