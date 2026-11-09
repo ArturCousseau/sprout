@@ -347,4 +347,25 @@ describe("POST /changesets", () => {
     expect(readMainHead(db)).toBe(2);
     expect(db.prepare("SELECT count(*) FROM changesets").pluck().get()).toBe(2);
   });
+
+  it("responds 415 to a body sent as application/octet-stream", async () => {
+    // The octet-stream parser registered for PUT /blobs applies to every
+    // route, so without a check this body reaches the handler as a Buffer.
+    const before = snapshot();
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/changesets",
+      headers: { "content-type": "application/octet-stream" },
+      payload: JSON.stringify(valid),
+    });
+
+    expect(res.statusCode).toBe(415);
+    expect(res.json()).toEqual({
+      statusCode: 415,
+      error: "Unsupported Media Type",
+      message: "content-type must be application/json",
+    });
+    expect(snapshot()).toEqual(before);
+  });
 });

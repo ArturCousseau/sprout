@@ -45,21 +45,24 @@
  *        the missing hashes
  *   409  `parent` is not the head of main. Provisional until #12, which
  *        reparents instead when the paths do not conflict.
+ *   415  body sent as `application/octet-stream`. The parser registered for
+ *        PUT /blobs applies to every route, so it reaches the handler as a
+ *        Buffer; the handler answers "content-type must be application/json".
  *   500  "main moved during the request": the compare-and-swap found main
  *        changed. Unreachable while reading the head and the compare-and-swap
  *        run in one synchronous stretch (ADR 0004, decision 5), so it means a
  *        server bug.
- *   Precedence: the first failing check answers, in this order: 400 invalid
- *   body → 404 parent → 400 missing blobs → 409. Nothing is written unless
- *   the answer is 201.
+ *   Precedence: the first failing check answers, in this order: 415
+ *   octet-stream → 400 invalid body → 404 parent → 400 missing blobs → 409.
+ *   Nothing is written unless the answer is 201.
  *   Answered by Fastify itself, before the handler runs (body with Fastify's
  *   extra `code` field):
  *   400  `content-type: application/json` with an empty or invalid JSON body
  *   413  body larger than `bodyLimit` (same limit as PUT /blobs)
  *   415  a body with no content-type, or with a content-type that has no
- *        parser (e.g. application/xml). `text/plain` and
- *        `application/octet-stream` do have parsers, so they reach the
- *        handler and get the 400 above.
+ *        parser (e.g. application/xml). `text/plain` has a parser, so it
+ *        reaches the handler as a string and gets the 400 above;
+ *        `application/octet-stream` gets the handler's own 415 above.
  *
  * Errors use Fastify's own error shape: `{ statusCode, error, message }`.
  *
@@ -270,6 +273,11 @@ export function buildApp({
   });
 
   app.post<{ Body: unknown }>("/changesets", async (request, reply) => {
+    // The octet-stream parser registered above for PUT /blobs applies to every
+    // route, so such a body reaches this handler as a Buffer.
+    if (Buffer.isBuffer(request.body)) {
+      return sendError(reply, 415, "content-type must be application/json");
+    }
     const parsed = parseChangesetBody(request.body);
     if (!parsed.ok) {
       return sendError(reply, 400, parsed.message);
