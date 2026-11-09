@@ -319,4 +319,32 @@ describe("POST /changesets", () => {
     });
     expect(snapshot()).toEqual(before);
   });
+
+  it("10 concurrent POSTs create exactly one changeset", async () => {
+    // A non-null blobHash, so every request really awaits hasBlob before
+    // reading the head.
+    const hash = await storeBlob("shared content");
+
+    const responses = await Promise.all(
+      Array.from({ length: 10 }, (_, n) =>
+        post({
+          ...valid,
+          message: `agent ${n}`,
+          changes: [{ path: `f${n}.txt`, blobHash: hash }],
+        }),
+      ),
+    );
+
+    const statuses = responses.map((res) => res.statusCode).sort();
+    expect(statuses).toEqual([
+      201, 409, 409, 409, 409, 409, 409, 409, 409, 409,
+    ]);
+    const created = responses.find((res) => res.statusCode === 201);
+    if (created === undefined) {
+      throw new Error("expected one 201 response");
+    }
+    expect(created.json<Changeset>().id).toBe(2);
+    expect(readMainHead(db)).toBe(2);
+    expect(db.prepare("SELECT count(*) FROM changesets").pluck().get()).toBe(2);
+  });
 });
