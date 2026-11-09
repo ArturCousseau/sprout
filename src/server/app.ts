@@ -42,7 +42,13 @@ import { mkdir } from "node:fs/promises";
 import { STATUS_CODES } from "node:http";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { getBlob, putBlob } from "./blob-store.js";
-import { readChangeset, readMainHead, type Db } from "./db.js";
+import {
+  createChangeset,
+  readChangeset,
+  readMainHead,
+  type Db,
+  type NewChangeset,
+} from "./db.js";
 
 export interface AppOptions {
   blobDir: string;
@@ -130,6 +136,23 @@ export function buildApp({
       return sendError(reply, 404, `changeset not found: ${id}`);
     }
     return changeset;
+  });
+
+  app.post<{ Body: NewChangeset }>("/changesets", (request, reply) => {
+    const { parent, author, message, changes } = request.body;
+    const head = readMainHead(db);
+    const result = createChangeset(db, head, {
+      parent,
+      author,
+      message,
+      changes,
+    });
+    if (result.kind === "stale-head") {
+      // Unreachable while reading the head and the compare-and-swap run in
+      // one synchronous stretch (ADR 0004, decision 5): a server bug.
+      return sendError(reply, 500, "main moved during the request");
+    }
+    return reply.code(201).send(result.changeset);
   });
 
   return app;
