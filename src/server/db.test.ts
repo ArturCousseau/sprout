@@ -217,4 +217,20 @@ describe("createChangeset", () => {
     expect(db.prepare("SELECT count(*) FROM changes").pluck().get()).toBe(0);
     expect(readMainHead(db)).toBe(1);
   });
+
+  it("createChangeset returns stale-head and writes nothing", () => {
+    const db = open();
+
+    const result = createChangeset(db, 99, {
+      parent: 1,
+      author: "agent-1",
+      message: "stale expected head",
+      changes: [{ path: "a.txt", blobHash: null }],
+    });
+
+    expect(result.kind).toBe("stale-head");
+    expect(db.prepare("SELECT count(*) FROM changesets").pluck().get()).toBe(1);
+    expect(db.prepare("SELECT count(*) FROM changes").pluck().get()).toBe(0);
+    expect(readMainHead(db)).toBe(1);
+  });
 });

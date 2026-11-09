@@ -104,8 +104,18 @@ export interface NewChangeset {
 export type CreateChangesetResult =
   { kind: "created"; changeset: Changeset } | { kind: "stale-head" };
 
-/** Inserts the changeset and its changes and moves main. Runs inside a transaction. */
-function writeChangeset(db: Db, input: NewChangeset): Changeset {
+/** Thrown inside the transaction to roll it back when main is not expectedHead. */
+class StaleHeadError extends Error {}
+
+/**
+ * Inserts the changeset and its changes and moves main from expectedHead to
+ * the new id (compare-and-swap). Runs inside a transaction.
+ */
+function writeChangeset(
+  db: Db,
+  expectedHead: number,
+  input: NewChangeset,
+): Changeset {
   const id = Number(
     db
       .prepare(
@@ -120,24 +130,39 @@ function writeChangeset(db: Db, input: NewChangeset): Changeset {
   for (const change of input.changes) {
     insertChange.run(id, change.path, change.blobHash);
   }
-  db.prepare("UPDATE refs SET value = ? WHERE name = 'main'").run(id);
+  const swapped = db
+    .prepare("UPDATE refs SET value = ? WHERE name = 'main' AND value = ?")
+    .run(id, expectedHead);
+  if (swapped.changes !== 1) {
+    throw new StaleHeadError();
+  }
   const changeset = readChangeset(db, id);
   if (!changeset) {
-    throw new Error(`changeset ${id} was not written`);
+    // No template literals in this file: #11 checks it has no interpolation.
+    throw new Error("changeset was not written: " + String(id));
   }
   return changeset;
 }
 
 /**
  * Writes the changeset, its changes and the new main in one immediate
- * transaction: if any step throws, nothing is written and the error is
- * rethrown.
+ * transaction. If main no longer points at expectedHead, nothing is written
+ * and the result is "stale-head". Any other error rolls back and is rethrown.
  */
 export function createChangeset(
   db: Db,
-  _expectedHead: number,
+  expectedHead: number,
   input: NewChangeset,
 ): CreateChangesetResult {
-  const changeset = db.transaction(writeChangeset).immediate(db, input);
-  return { kind: "created", changeset };
+  try {
+    const changeset = db
+      .transaction(writeChangeset)
+      .immediate(db, expectedHead, input);
+    return { kind: "created", changeset };
+  } catch (error) {
+    if (error instanceof StaleHeadError) {
+      return { kind: "stale-head" };
+    }
+    throw error;
+  }
 }
