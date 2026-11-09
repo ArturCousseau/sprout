@@ -43,7 +43,7 @@ import { STATUS_CODES } from "node:http";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import type { Change } from "../core/changeset.js";
 import { InvalidPathError, normalizePath } from "../core/path.js";
-import { getBlob, HASH_FORMAT, putBlob } from "./blob-store.js";
+import { getBlob, HASH_FORMAT, hasBlob, putBlob } from "./blob-store.js";
 import {
   createChangeset,
   readChangeset,
@@ -240,11 +240,31 @@ export function buildApp({
     return changeset;
   });
 
-  app.post<{ Body: unknown }>("/changesets", (request, reply) => {
+  app.post<{ Body: unknown }>("/changesets", async (request, reply) => {
     const parsed = parseChangesetBody(request.body);
     if (!parsed.ok) {
       return sendError(reply, 400, parsed.message);
     }
+
+    // Each blob is checked once, even when several paths share it. Removals
+    // (blobHash null) do not touch the blob store.
+    const hashes = new Set<string>();
+    for (const change of parsed.value.changes) {
+      if (change.blobHash !== null) {
+        hashes.add(change.blobHash);
+      }
+    }
+    const found = await Promise.all(
+      [...hashes].map((hash) => hasBlob(blobDir, hash)),
+    );
+    const missing = [...hashes].filter((_hash, index) => !found[index]);
+    if (missing.length > 0) {
+      return sendError(reply, 400, `missing blobs: ${missing.join(", ")}`);
+    }
+
+    // From here to the compare-and-swap there is no await, so no other
+    // request runs in between (ADR 0004, decision 5). All asynchronous checks
+    // must finish above this line.
     const head = readMainHead(db);
     const result = createChangeset(db, head, parsed.value);
     if (result.kind === "stale-head") {

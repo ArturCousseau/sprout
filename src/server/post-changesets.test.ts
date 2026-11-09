@@ -250,4 +250,35 @@ describe("POST /changesets", () => {
     expect(json.message).toContain("a.txt");
     expect(snapshot()).toEqual(before);
   });
+
+  it("lists every missing blob", async () => {
+    const present = await storeBlob("stored content");
+    const missingA = hashContent("never stored A");
+    const missingB = hashContent("never stored B");
+    const before = snapshot();
+
+    const res = await post({
+      ...valid,
+      changes: [
+        { path: "present.txt", blobHash: present },
+        { path: "a1.txt", blobHash: missingA },
+        { path: "b.txt", blobHash: missingB },
+        // Same missing blob on a second path: listed once.
+        { path: "a2.txt", blobHash: missingA },
+      ],
+    });
+
+    expect(res.statusCode).toBe(400);
+    const json = res.json<{
+      statusCode: number;
+      error: string;
+      message: string;
+    }>();
+    expect(json.statusCode).toBe(400);
+    expect(json.error).toBe("Bad Request");
+    expect(json.message).toContain(missingB);
+    expect(json.message.split(missingA)).toHaveLength(2);
+    expect(json.message).not.toContain(present);
+    expect(snapshot()).toEqual(before);
+  });
 });
