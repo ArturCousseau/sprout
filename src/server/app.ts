@@ -32,6 +32,35 @@
  *   414  :id longer than Fastify's maxParamLength (100 chars). Fastify answers
  *        this itself, before the handler runs.
  *
+ * POST /changesets — body is JSON `{ parent, author, message, changes }`,
+ * with `changes: [{ path, blobHash }]` (`blobHash: null` = file removed).
+ *   201  changeset created and main moved to it; body is the core
+ *        `Changeset`, the same as GET /changesets/:id returns
+ *   400  invalid body: not a JSON object, a missing or wrongly typed field,
+ *        `id` or `timestamp` sent (the server assigns them), an unknown
+ *        field, a path normalizePath refuses, or the same path twice after
+ *        normalization
+ *   404  `parent` does not exist
+ *   400  some non-null blobHash is not in the blob store; the message lists
+ *        the missing hashes
+ *   409  `parent` is not the head of main. Provisional until #12, which
+ *        reparents instead when the paths do not conflict.
+ *   500  "main moved during the request": the compare-and-swap found main
+ *        changed. Unreachable while reading the head and the compare-and-swap
+ *        run in one synchronous stretch (ADR 0004, decision 5), so it means a
+ *        server bug.
+ *   Precedence: the first failing check answers, in this order: 400 invalid
+ *   body → 404 parent → 400 missing blobs → 409. Nothing is written unless
+ *   the answer is 201.
+ *   Answered by Fastify itself, before the handler runs (body with Fastify's
+ *   extra `code` field):
+ *   400  `content-type: application/json` with an empty or invalid JSON body
+ *   413  body larger than `bodyLimit` (same limit as PUT /blobs)
+ *   415  a body with no content-type, or with a content-type that has no
+ *        parser (e.g. application/xml). `text/plain` and
+ *        `application/octet-stream` do have parsers, so they reach the
+ *        handler and get the 400 above.
+ *
  * Errors use Fastify's own error shape: `{ statusCode, error, message }`.
  *
  * A literal `../` in the URL (`/blobs/../x`) never reaches these handlers: the
