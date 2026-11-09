@@ -38,12 +38,18 @@ ADR 0001.
    o marca como "Stability: 1.2 - Release candidate", ainda dentro do nível
    experimental, que "is not subject to semantic versioning rules"
    (nodejs.org, `sqlite.html` e `documentation.html` da v26.12.0).
-3. **`PRAGMA foreign_keys = ON` explícito, a cada conexão.** Alternativa
-   considerada: confiar no padrão. Rejeitada porque o padrão do SQLite é
-   desligado e só muda por opção de compilação; a documentação recomenda
-   "not depend on the default setting" (sqlite.org, `pragma.html`). A build do
-   better-sqlite3 usada hoje já liga as chaves estrangeiras, então o pragma não
-   muda o comportamento atual: ele protege contra uma build diferente.
+3. **`PRAGMA foreign_keys = ON` explícito, a cada conexão.** A build atual do
+   better-sqlite3 já liga as chaves estrangeiras: ela é compilada com
+   `SQLITE_DEFAULT_FOREIGN_KEYS=1` (`deps/defines.gypi` do pacote), e uma
+   conexão nova, sem pragma nenhum, responde `foreign_keys` = 1. Por isso o
+   pragma não muda o comportamento de hoje, e o teste de pai inexistente passa
+   com ou sem ele. O pragma fica explícito para não depender da build nem do
+   driver: no SQLite o padrão é desligado e só muda por opção de compilação, e
+   a documentação recomenda "not depend on the default setting" (sqlite.org,
+   `pragma.html`). Alternativa considerada: confiar no padrão da build.
+   Rejeitada porque, com outra build do better-sqlite3 ou outro driver (como o
+   `node:sqlite`), a checagem passaria a depender de uma opção de compilação
+   que o Sprout não controla.
 4. **`journal_mode` e `synchronous` ficam nos padrões (DELETE e FULL).**
    Alternativa considerada: WAL com `synchronous = NORMAL`, recomendada pelo
    better-sqlite3 para desempenho (`docs/performance.md` do projeto).

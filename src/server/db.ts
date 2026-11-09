@@ -49,7 +49,10 @@ function seed(db: Db): void {
 export function openDatabase(path: string): Db {
   const db = new Database(path);
   try {
-    // Must run outside a transaction: inside one it is a no-op.
+    // The current better-sqlite3 build already turns foreign keys on
+    // (SQLITE_DEFAULT_FOREIGN_KEYS=1); set explicitly so the rule does not
+    // depend on the build or the driver. Must run outside a transaction:
+    // inside one it is a no-op.
     db.pragma("foreign_keys = ON");
     db.exec(SCHEMA);
     db.transaction(seed).immediate(db);
