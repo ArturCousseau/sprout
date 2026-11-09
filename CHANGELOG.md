@@ -24,7 +24,8 @@ para a issue e para o PR de onde veio. O processo de release está no
 - Metadados em SQLite (`better-sqlite3`): changesets como diff, a ref `main`,
   o changeset raiz criado na primeira abertura, `GET /refs/main`,
   `GET /changesets/:id` e o ADR 0004, sobre SQLite num processo só
-  ([#10](https://github.com/ArturCousseau/sprout/issues/10)).
+  ([#10](https://github.com/ArturCousseau/sprout/issues/10),
+  [#34](https://github.com/ArturCousseau/sprout/pull/34)).
 
 ### Alterado
 
