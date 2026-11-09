@@ -197,4 +197,24 @@ describe("createChangeset", () => {
     expect(readMainHead(db)).toBe(2);
     expect(readChangeset(db, 2)).toEqual(result.changeset);
   });
+
+  it("createChangeset rolls back when a change fails", () => {
+    const db = open();
+
+    expect(() =>
+      createChangeset(db, 1, {
+        parent: 1,
+        author: "agent-1",
+        message: "repeated path",
+        changes: [
+          { path: "a.txt", blobHash: null },
+          { path: "a.txt", blobHash: null },
+        ],
+      }),
+    ).toThrow(/UNIQUE constraint failed/);
+
+    expect(db.prepare("SELECT count(*) FROM changesets").pluck().get()).toBe(1);
+    expect(db.prepare("SELECT count(*) FROM changes").pluck().get()).toBe(0);
+    expect(readMainHead(db)).toBe(1);
+  });
 });

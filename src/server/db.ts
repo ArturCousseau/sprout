@@ -104,11 +104,8 @@ export interface NewChangeset {
 export type CreateChangesetResult =
   { kind: "created"; changeset: Changeset } | { kind: "stale-head" };
 
-export function createChangeset(
-  db: Db,
-  _expectedHead: number,
-  input: NewChangeset,
-): CreateChangesetResult {
+/** Inserts the changeset and its changes and moves main. Runs inside a transaction. */
+function writeChangeset(db: Db, input: NewChangeset): Changeset {
   const id = Number(
     db
       .prepare(
@@ -128,5 +125,19 @@ export function createChangeset(
   if (!changeset) {
     throw new Error(`changeset ${id} was not written`);
   }
+  return changeset;
+}
+
+/**
+ * Writes the changeset, its changes and the new main in one immediate
+ * transaction: if any step throws, nothing is written and the error is
+ * rethrown.
+ */
+export function createChangeset(
+  db: Db,
+  _expectedHead: number,
+  input: NewChangeset,
+): CreateChangesetResult {
+  const changeset = db.transaction(writeChangeset).immediate(db, input);
   return { kind: "created", changeset };
 }
