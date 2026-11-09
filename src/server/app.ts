@@ -130,6 +130,7 @@ function parseChangesetBody(body: unknown): ParseResult {
   }
   const items: unknown[] = changes;
   const normalized: Change[] = [];
+  const seen = new Set<string>();
   for (const [index, item] of items.entries()) {
     if (!isObject(item)) {
       return fail(`changes[${index}] must be an object`);
@@ -147,14 +148,20 @@ function parseChangesetBody(body: unknown): ParseResult {
         `changes[${index}].blobHash must be null or 64 lowercase hex chars`,
       );
     }
+    let normalizedPath: string;
     try {
-      normalized.push({ path: normalizePath(path), blobHash });
+      normalizedPath = normalizePath(path);
     } catch (error) {
       if (error instanceof InvalidPathError) {
         return fail(`invalid path "${path}": ${error.message}`);
       }
       throw error;
     }
+    if (seen.has(normalizedPath)) {
+      return fail(`duplicate path after normalization: ${normalizedPath}`);
+    }
+    seen.add(normalizedPath);
+    normalized.push({ path: normalizedPath, blobHash });
   }
   return {
     ok: true,

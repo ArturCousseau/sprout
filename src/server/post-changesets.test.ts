@@ -228,4 +228,26 @@ describe("POST /changesets", () => {
     expect(json.error).toBe("Bad Request");
     expect(snapshot()).toEqual(before);
   });
+
+  it.each([
+    ["a.txt", "a.txt"],
+    ["a.txt", "./a.txt"],
+  ])("rejects a repeated path (%s and %s)", async (first, second) => {
+    const before = snapshot();
+
+    const res = await post({
+      ...valid,
+      changes: [
+        { path: first, blobHash: null },
+        { path: second, blobHash: null },
+      ],
+    });
+
+    expect(res.statusCode).toBe(400);
+    const json = res.json<Record<string, unknown>>();
+    expect(json.statusCode).toBe(400);
+    expect(json.error).toBe("Bad Request");
+    expect(json.message).toContain("a.txt");
+    expect(snapshot()).toEqual(before);
+  });
 });
