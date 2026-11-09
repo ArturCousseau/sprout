@@ -38,4 +38,18 @@ describe("hasBlob", () => {
 
     expect(await hasBlob(blobDir, hash)).toBe(true);
   });
+
+  it("hasBlob: false for an uppercase hash, even with a file of that name", async () => {
+    const upper = hashContent("some content").toUpperCase();
+    await writeFile(join(blobDir, upper), "planted");
+
+    expect(await hasBlob(blobDir, upper)).toBe(false);
+  });
+
+  it("hasBlob: false for a path that leaves blobDir", async () => {
+    // blobDir is <root>/blobs, so "../outside" would reach <root>/outside.
+    await writeFile(join(root, "outside"), "planted");
+
+    expect(await hasBlob(blobDir, "../outside")).toBe(false);
+  });
 });

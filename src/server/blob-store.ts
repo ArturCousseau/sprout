@@ -25,7 +25,7 @@ import { hashContent } from "../core/hash.js";
 const deflateAsync = promisify(deflate);
 const inflateAsync = promisify(inflate);
 
-const HASH_FORMAT = /^[0-9a-f]{64}$/;
+export const HASH_FORMAT = /^[0-9a-f]{64}$/;
 
 export type PutResult = "created" | "exists" | "invalid-hash" | "hash-mismatch";
 export type GetResult = Buffer | "invalid-hash" | "not-found";
@@ -61,6 +61,9 @@ export async function putBlob(
 
 /** true when <blobDir>/<hash> exists. Never reads or inflates the file. */
 export async function hasBlob(blobDir: string, hash: string): Promise<boolean> {
+  if (!HASH_FORMAT.test(hash)) {
+    return false;
+  }
   try {
     await access(join(blobDir, hash));
     return true;
