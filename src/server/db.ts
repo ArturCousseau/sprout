@@ -92,3 +92,41 @@ export function readChangeset(db: Db, id: number): Changeset | undefined {
     .all(id);
   return { ...row, changes };
 }
+
+/** A changeset to create. Paths must already be normalized. */
+export interface NewChangeset {
+  parent: number;
+  author: string;
+  message: string;
+  changes: Change[];
+}
+
+export type CreateChangesetResult =
+  { kind: "created"; changeset: Changeset } | { kind: "stale-head" };
+
+export function createChangeset(
+  db: Db,
+  _expectedHead: number,
+  input: NewChangeset,
+): CreateChangesetResult {
+  const id = Number(
+    db
+      .prepare(
+        "INSERT INTO changesets (parent, author, message, timestamp) VALUES (?, ?, ?, ?)",
+      )
+      .run(input.parent, input.author, input.message, new Date().toISOString())
+      .lastInsertRowid,
+  );
+  const insertChange = db.prepare(
+    "INSERT INTO changes (changeset_id, path, blob_hash) VALUES (?, ?, ?)",
+  );
+  for (const change of input.changes) {
+    insertChange.run(id, change.path, change.blobHash);
+  }
+  db.prepare("UPDATE refs SET value = ? WHERE name = 'main'").run(id);
+  const changeset = readChangeset(db, id);
+  if (!changeset) {
+    throw new Error(`changeset ${id} was not written`);
+  }
+  return { kind: "created", changeset };
+}

@@ -3,7 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { openDatabase, type Db } from "./db.js";
+import { hashContent } from "../core/hash.js";
+import {
+  createChangeset,
+  openDatabase,
+  readChangeset,
+  readMainHead,
+  type Db,
+} from "./db.js";
 
 let root: string;
 const opened: Db[] = [];
@@ -153,5 +160,41 @@ describe("root changeset", () => {
     expect(again.prepare("SELECT count(*) FROM changesets").pluck().get()).toBe(
       2,
     );
+  });
+});
+
+describe("createChangeset", () => {
+  it("createChangeset writes the changeset and moves main", () => {
+    const db = open();
+    const hash = hashContent("new content of b.txt");
+
+    const result = createChangeset(db, 1, {
+      parent: 1,
+      author: "agent-1",
+      message: "first change",
+      changes: [
+        { path: "b.txt", blobHash: hash },
+        { path: "a.txt", blobHash: null },
+      ],
+    });
+
+    expect(result.kind).toBe("created");
+    if (result.kind !== "created") {
+      throw new Error(`expected kind "created", got "${result.kind}"`);
+    }
+    const { timestamp, ...rest } = result.changeset;
+    expect(rest).toEqual({
+      id: 2,
+      parent: 1,
+      author: "agent-1",
+      message: "first change",
+      changes: [
+        { path: "a.txt", blobHash: null },
+        { path: "b.txt", blobHash: hash },
+      ],
+    });
+    expect(timestamp).toMatch(ISO_UTC);
+    expect(readMainHead(db)).toBe(2);
+    expect(readChangeset(db, 2)).toEqual(result.changeset);
   });
 });
