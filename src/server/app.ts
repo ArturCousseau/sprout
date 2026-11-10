@@ -35,7 +35,11 @@
  * POST /changesets — body is JSON `{ parent, author, message, changes }`,
  * with `changes: [{ path, blobHash }]` (`blobHash: null` = file removed).
  *   201  changeset created and main moved to it; body is the core
- *        `Changeset`, the same as GET /changesets/:id returns
+ *        `Changeset`, the same as GET /changesets/:id returns. Its parent is
+ *        always the head of main: when `parent` is stale and no path of the
+ *        request was changed after it, the server reparents the changeset
+ *        onto the head, in one jump (ADR 0003). The client sees the reparent
+ *        by comparing the `parent` of the answer with the one it sent.
  *   400  invalid body: not a JSON object, a missing or wrongly typed field,
  *        `id` or `timestamp` sent (the server assigns them), an unknown
  *        field, a path normalizePath refuses, or the same path twice after
@@ -43,8 +47,11 @@
  *   404  `parent` does not exist
  *   400  some non-null blobHash is not in the blob store; the message lists
  *        the missing hashes
- *   409  `parent` is not the head of main. Provisional until #12, which
- *        reparents instead when the paths do not conflict.
+ *   409  some path of the request was changed by a changeset after `parent`,
+ *        up to the head of main (inclusive). Body:
+ *        `{ statusCode, error, message: "paths changed since parent",
+ *        conflicts }`, with `conflicts` = those paths, normalized, unique and
+ *        sorted.
  *   415  body sent as `application/octet-stream`. The parser registered for
  *        PUT /blobs applies to every route, so it reaches the handler as a
  *        Buffer; the handler answers "content-type must be application/json".
@@ -53,7 +60,8 @@
  *        run in one synchronous stretch (ADR 0004, decision 5), so it means a
  *        server bug.
  *   Precedence: the first failing check answers, in this order: 415
- *   octet-stream → 400 invalid body → 404 parent → 400 missing blobs → 409.
+ *   octet-stream → 400 invalid body → 404 parent → 400 missing blobs → 409
+ *   conflicts.
  *   Nothing is written unless the answer is 201.
  *   Answered by Fastify itself, before the handler runs (body with Fastify's
  *   extra `code` field):
@@ -64,7 +72,8 @@
  *        reaches the handler as a string and gets the 400 above;
  *        `application/octet-stream` gets the handler's own 415 above.
  *
- * Errors use Fastify's own error shape: `{ statusCode, error, message }`.
+ * Errors use Fastify's own error shape: `{ statusCode, error, message }`; the
+ * 409 of POST /changesets adds `conflicts`.
  *
  * A literal `../` in the URL (`/blobs/../x`) never reaches these handlers: the
  * router resolves the path first (`/x`) and answers 404 by itself. An encoded
@@ -341,11 +350,10 @@ export function buildApp({
     if (conflicts.length > 0) {
       return sendConflict(reply, conflicts);
     }
-    if (parent !== head) {
-      // Provisional: a stale parent without conflicts. The next step of #12
-      // reparents it onto the head instead.
-      return sendError(reply, 409, "parent is not the head of main");
-    }
+    // No conflict: the changeset goes on top of the head. When `parent` is
+    // stale, this is the reparent, a single jump straight to the head; when
+    // it is the head, nothing changes. createChangeset takes the parent from
+    // `head`, never from the request.
     const result = createChangeset(db, head, input);
     if (result.kind === "stale-head") {
       // Unreachable while reading the head and the compare-and-swap run in
