@@ -46,6 +46,15 @@ conflitos. Tudo isso, neste ADR, é decisão do Sprout, inspirada no artigo.
    Se a `main` não estiver mais na cabeça esperada, nada é gravado
    (`stale-head`). Não há lock, mutex nem fila.
 
+   Criar o changeset e fazer o CAS na mesma transação é decisão do Sprout,
+   desde a #11, e não vem do artigo. No artigo, mover a ref é um CAS separado
+   da criação dos changesets ("Data structures"). No Sprout, um changeset só
+   existe se entrou na `main`: se o CAS falha, o changeset também não é
+   gravado. É isso que mantém a história em linha única (decisão 6).
+   Alternativa considerada: gravar o changeset primeiro e mover a `main`
+   depois, como no artigo. Rejeitada porque deixaria changesets fora da
+   `main`, e o intervalo de ids da decisão 6 passaria a contá-los.
+
 2. **O gatilho do reparent é o `parent` desatualizado, não a falha do CAS.**
    O cliente lê a `main`, outro commit entra, e só depois ele envia o pedido.
    Ler a cabeça e fazer o CAS no mesmo trecho síncrono nunca vê o CAS falhar
