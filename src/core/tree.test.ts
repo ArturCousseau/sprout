@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyChanges } from "./tree.js";
+import { applyChanges, treeEntries } from "./tree.js";
 
 // Any 64-char strings work: applyChanges does not look inside the hashes.
 const H1 = "1".repeat(64);
@@ -91,5 +91,23 @@ describe("applyChanges", () => {
         ["c.txt", H1],
       ]),
     );
+  });
+});
+
+describe("treeEntries", () => {
+  it("sorts by path", () => {
+    // Inserted out of order: a Map keeps insertion order, so only a sort
+    // puts a.txt first.
+    const tree = new Map([
+      ["b.txt", H2],
+      ["a.txt", H1],
+      ["c.txt", H3],
+    ]);
+
+    expect(treeEntries(tree)).toEqual([
+      { path: "a.txt", blobHash: H1 },
+      { path: "b.txt", blobHash: H2 },
+      { path: "c.txt", blobHash: H3 },
+    ]);
   });
 });
