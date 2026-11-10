@@ -15,7 +15,7 @@ export type Db = Database.Database;
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS changesets (
   id        INTEGER PRIMARY KEY,
-  parent    INTEGER REFERENCES changesets (id),
+  parent    INTEGER REFERENCES changesets (id) CHECK (parent < id),
   author    TEXT NOT NULL,
   message   TEXT NOT NULL,
   timestamp TEXT NOT NULL
@@ -93,9 +93,34 @@ export function readChangeset(db: Db, id: number): Changeset | undefined {
   return { ...row, changes };
 }
 
-/** A changeset to create. Paths must already be normalized. */
+/**
+ * Paths changed by the changesets after `after` and up to `upTo` (inclusive),
+ * each once, sorted by path (SQLite's BINARY order). Removals count as
+ * changes. Empty when `after` equals `upTo`.
+ *
+ * Walks the id range, not the parent pointers. The result is only right while
+ * the history is one line, with every changeset created on top of the head,
+ * as createChangeset does. Otherwise it returns paths of changesets that are
+ * not ancestors of `upTo`, without any error. See ADR 0003.
+ */
+export function readChangedPaths(
+  db: Db,
+  after: number,
+  upTo: number,
+): string[] {
+  return db
+    .prepare<[number, number], string>(
+      "SELECT DISTINCT path FROM changes WHERE changeset_id > ? AND changeset_id <= ? ORDER BY path",
+    )
+    .pluck()
+    .all(after, upTo);
+}
+
+/**
+ * A changeset to create. Paths must already be normalized. There is no
+ * parent: createChangeset uses the head it expects to replace.
+ */
 export interface NewChangeset {
-  parent: number;
   author: string;
   message: string;
   changes: Change[];
@@ -108,8 +133,9 @@ export type CreateChangesetResult =
 class StaleHeadError extends Error {}
 
 /**
- * Inserts the changeset and its changes and moves main from expectedHead to
- * the new id (compare-and-swap). Runs inside a transaction.
+ * Inserts the changeset, with expectedHead as its parent, and its changes, and
+ * moves main from expectedHead to the new id (compare-and-swap). Runs inside a
+ * transaction.
  */
 function writeChangeset(
   db: Db,
@@ -121,7 +147,7 @@ function writeChangeset(
       .prepare(
         "INSERT INTO changesets (parent, author, message, timestamp) VALUES (?, ?, ?, ?)",
       )
-      .run(input.parent, input.author, input.message, new Date().toISOString())
+      .run(expectedHead, input.author, input.message, new Date().toISOString())
       .lastInsertRowid,
   );
   const insertChange = db.prepare(
@@ -149,10 +175,10 @@ function writeChangeset(
  * transaction. If main no longer points at expectedHead, nothing is written
  * and the result is "stale-head". Any other error rolls back and is rethrown.
  *
- * Trusts the caller for `input.parent`: it must be an existing changeset, and
- * the POST /changesets handler also requires it to be expectedHead. This
- * function checks neither. Called directly with the next id as parent, the
- * foreign key accepts a changeset that is its own parent.
+ * The parent of the new changeset is always expectedHead, so every changeset
+ * is created on top of the head it replaces and the history stays one line
+ * (ADR 0003). The schema also refuses a parent that is not below the new id
+ * (`CHECK (parent < id)`), so a changeset cannot be its own parent.
  */
 export function createChangeset(
   db: Db,

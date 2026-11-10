@@ -3,10 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { Change } from "../core/changeset.js";
 import { hashContent } from "../core/hash.js";
 import {
   createChangeset,
   openDatabase,
+  readChangedPaths,
   readChangeset,
   readMainHead,
   type Db,
@@ -74,13 +76,49 @@ describe("schema", () => {
   it("rejects a changeset whose parent does not exist", () => {
     const db = open();
 
+    // Parent 5 is below id 10, so the CHECK on parent passes and only the
+    // foreign key can refuse it.
     expect(() =>
       db
         .prepare(
-          "INSERT INTO changesets (id, parent, author, message, timestamp) VALUES (2, 99, 'a', 'm', 't')",
+          "INSERT INTO changesets (id, parent, author, message, timestamp) VALUES (10, 5, 'a', 'm', 't')",
         )
         .run(),
     ).toThrow(/FOREIGN KEY constraint failed/);
+  });
+
+  it.each([
+    ["parent 2, the next id: its own parent", 2],
+    ["parent 3, above the next id", 3],
+  ])(
+    "rejects a changeset whose parent is not below its id (%s)",
+    (_case, parent) => {
+      const db = open();
+      // No explicit id: the CHECK must see the id SQLite assigns.
+      const insert = db.prepare(
+        "INSERT INTO changesets (parent, author, message, timestamp) VALUES (?, 'a', 'm', 't')",
+      );
+
+      expect(() => insert.run(parent)).toThrow(/CHECK constraint failed/);
+      expect(db.prepare("SELECT count(*) FROM changesets").pluck().get()).toBe(
+        1,
+      );
+    },
+  );
+
+  it("accepts a parent below the new id", () => {
+    const db = open();
+
+    const result = db
+      .prepare(
+        "INSERT INTO changesets (parent, author, message, timestamp) VALUES (1, 'a', 'm', 't')",
+      )
+      .run();
+
+    expect(Number(result.lastInsertRowid)).toBe(2);
+    expect(
+      db.prepare("SELECT id, parent FROM changesets WHERE id = 2").get(),
+    ).toEqual({ id: 2, parent: 1 });
   });
 
   it.each([
@@ -169,7 +207,6 @@ describe("createChangeset", () => {
     const hash = hashContent("new content of b.txt");
 
     const result = createChangeset(db, 1, {
-      parent: 1,
       author: "agent-1",
       message: "first change",
       changes: [
@@ -198,12 +235,35 @@ describe("createChangeset", () => {
     expect(readChangeset(db, 2)).toEqual(result.changeset);
   });
 
+  it("createChangeset uses expectedHead as the parent", () => {
+    const db = open();
+    createChangeset(db, 1, {
+      author: "agent-1",
+      message: "first change",
+      changes: [{ path: "a.txt", blobHash: null }],
+    });
+    const input = {
+      author: "agent-2",
+      message: "second change",
+      changes: [{ path: "b.txt", blobHash: null }],
+    };
+
+    const result = createChangeset(db, 2, input);
+
+    expect(result.kind).toBe("created");
+    if (result.kind !== "created") {
+      throw new Error(`expected kind "created", got "${result.kind}"`);
+    }
+    expect(result.changeset.parent).toBe(2);
+    expect(readChangeset(db, 3)?.parent).toBe(2);
+    expect(readMainHead(db)).toBe(3);
+  });
+
   it("createChangeset rolls back when a change fails", () => {
     const db = open();
 
     expect(() =>
       createChangeset(db, 1, {
-        parent: 1,
         author: "agent-1",
         message: "repeated path",
         changes: [
@@ -220,17 +280,98 @@ describe("createChangeset", () => {
 
   it("createChangeset returns stale-head and writes nothing", () => {
     const db = open();
-
-    const result = createChangeset(db, 99, {
-      parent: 1,
+    createChangeset(db, 1, {
       author: "agent-1",
-      message: "stale expected head",
+      message: "first change",
       changes: [{ path: "a.txt", blobHash: null }],
     });
 
+    // Main is at 2; expecting 1 makes the compare-and-swap fail. The new
+    // changeset's parent would be 1, which exists and is below the new id, so
+    // the foreign key and the CHECK pass.
+    const result = createChangeset(db, 1, {
+      author: "agent-2",
+      message: "stale expected head",
+      changes: [{ path: "b.txt", blobHash: null }],
+    });
+
     expect(result.kind).toBe("stale-head");
-    expect(db.prepare("SELECT count(*) FROM changesets").pluck().get()).toBe(1);
-    expect(db.prepare("SELECT count(*) FROM changes").pluck().get()).toBe(0);
-    expect(readMainHead(db)).toBe(1);
+    expect(db.prepare("SELECT count(*) FROM changesets").pluck().get()).toBe(2);
+    expect(db.prepare("SELECT count(*) FROM changes").pluck().get()).toBe(1);
+    expect(readMainHead(db)).toBe(2);
+  });
+});
+
+describe("readChangedPaths", () => {
+  /**
+   * A database with this history, created with createChangeset so it is one
+   * line: 2 {a, x}, 3 {b}, 4 {a, c}, 5 {a removed, d}. Main is at 5.
+   */
+  function openWithHistory(): Db {
+    const db = open();
+    const hash = hashContent("some content");
+    const history: Change[][] = [
+      [
+        { path: "a.txt", blobHash: hash },
+        { path: "x.txt", blobHash: hash },
+      ],
+      [{ path: "b.txt", blobHash: hash }],
+      [
+        { path: "a.txt", blobHash: hash },
+        { path: "c.txt", blobHash: hash },
+      ],
+      [
+        { path: "a.txt", blobHash: null },
+        { path: "d.txt", blobHash: hash },
+      ],
+    ];
+    for (const changes of history) {
+      const head = readMainHead(db);
+      const result = createChangeset(db, head, {
+        author: "agent-1",
+        message: "history",
+        changes,
+      });
+      if (result.kind !== "created") {
+        throw new Error(`expected kind "created", got "${result.kind}"`);
+      }
+    }
+    if (readMainHead(db) !== 5) {
+      throw new Error("expected main at 5");
+    }
+    return db;
+  }
+
+  it("excludes changes made in the parent itself", () => {
+    const db = openWithHistory();
+
+    // b.txt changed only in 3, the parent.
+    expect(readChangedPaths(db, 3, 5)).toEqual(["a.txt", "c.txt", "d.txt"]);
+  });
+
+  it("includes changes made in the head, removals too", () => {
+    const db = openWithHistory();
+
+    // 5 is the head: it removed a.txt and changed d.txt.
+    expect(readChangedPaths(db, 4, 5)).toEqual(["a.txt", "d.txt"]);
+  });
+
+  it("lists a path changed by several changesets once", () => {
+    const db = openWithHistory();
+
+    // a.txt changed in 2, 4 and 5.
+    expect(readChangedPaths(db, 1, 5)).toEqual([
+      "a.txt",
+      "b.txt",
+      "c.txt",
+      "d.txt",
+      "x.txt",
+    ]);
+  });
+
+  it("is empty when parent is the head", () => {
+    const db = openWithHistory();
+
+    expect(readChangedPaths(db, 5, 5)).toEqual([]);
   });
 });

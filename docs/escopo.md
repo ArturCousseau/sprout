@@ -63,9 +63,11 @@ pareça exigir quebrar um deles deve parar e ser discutido antes.
    as mudanças aplicadas, calculada sob demanda e guardada em cache.
 6. **Só existe uma ref, a `main`**, atualizada com compare-and-swap. Não existem
    branches nem tags dentro do Sprout.
-7. **Commits sem lock.** Se o compare-and-swap da `main` falhar: com arquivos
-   diferentes, o servidor troca o pai para a nova cabeça e tenta de novo; com o
-   mesmo arquivo, rejeita. Nada de lock, fila ou merge de conteúdo.
+7. **Commits sem lock.** O gatilho é o `parent` desatualizado do pedido, não
+   uma falha do compare-and-swap. Se nenhum caminho do pedido foi alterado
+   depois do `parent`, o servidor troca o pai para a cabeça, num salto só (no
+   máximo uma troca por pedido); se algum foi, rejeita com `409`. Sem laço de
+   tentativas. Nada de lock, fila ou merge de conteúdo (ADR 0003).
 
 ## 4. Componentes
 
@@ -120,16 +122,19 @@ Corpo: `{ parent, author, message, changes }`.
 1. Valida o pedido: `changes` não vazio, caminhos válidos, sem caminho repetido,
    todos os blobs já gravados, `parent` existente.
 2. Lê a cabeça atual da `main`.
-3. Se `parent` é a cabeça: cria o changeset e tenta o compare-and-swap.
-4. Se `parent` não é a cabeça (ou o compare-and-swap falhou): junta os caminhos
-   alterados pelos changesets entre `parent` e a cabeça.
-   - **Nenhum caminho em comum:** troca o pai para a cabeça e volta ao passo 3.
-   - **Algum caminho em comum:** responde `409` com a lista de caminhos em
-     conflito.
-5. Limite fixo de tentativas. Ao estourar, responde `503`.
+3. Junta os caminhos alterados pelos changesets depois de `parent` até a
+   cabeça (inclusive). Se `parent` é a cabeça, a lista é vazia.
+4. **Algum caminho do pedido na lista:** responde `409` com `conflicts`, os
+   caminhos em conflito. Nada é gravado.
+5. **Nenhum caminho em comum:** cria o changeset com a cabeça como pai e avança
+   a `main` com compare-and-swap. Se `parent` não era a cabeça, isso é a troca
+   de pai, num salto só. Os passos 2 a 5 rodam sem `await` no meio, então o
+   compare-and-swap não falha num processo só; se falhar, é bug do servidor
+   (`500`).
 
-Respostas: `201` (criado), `400` (pedido inválido), `404` (`parent` não existe),
-`409` (conflito), `503` (limite de tentativas).
+Respostas: `201` (criado, possivelmente com o pai trocado), `400` (pedido
+inválido ou blob ausente), `404` (`parent` não existe), `409` (conflito, com
+`conflicts`), `500` (bug do servidor).
 
 ## 6. A demo
 

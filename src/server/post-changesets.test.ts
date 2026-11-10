@@ -44,7 +44,45 @@ async function storeBlob(content: string): Promise<string> {
 function snapshot() {
   return {
     changesets: db.prepare("SELECT count(*) FROM changesets").pluck().get(),
+    changes: db.prepare("SELECT count(*) FROM changes").pluck().get(),
     main: readMainHead(db),
+  };
+}
+
+let contentCounter = 0;
+
+/**
+ * Creates a changeset on the head of main through the API, as another agent
+ * would, so the history stays one line. "change" stores new content for the
+ * path; "remove" sends `blobHash: null`.
+ */
+async function commitOnHead(
+  files: Record<string, "change" | "remove">,
+): Promise<Changeset> {
+  const changes = [];
+  for (const [path, kind] of Object.entries(files)) {
+    contentCounter += 1;
+    const blobHash =
+      kind === "remove" ? null : await storeBlob(`content ${contentCounter}`);
+    changes.push({ path, blobHash });
+  }
+  const res = await post({
+    parent: readMainHead(db),
+    author: "other-agent",
+    message: "on the head",
+    changes,
+  });
+  expect(res.statusCode).toBe(201);
+  return res.json<Changeset>();
+}
+
+/** The body of a 409 for these conflicting paths. */
+function conflictBody(conflicts: string[]) {
+  return {
+    statusCode: 409,
+    error: "Conflict",
+    message: "paths changed since parent",
+    conflicts,
   };
 }
 
@@ -301,26 +339,196 @@ describe("POST /changesets", () => {
     expect(snapshot()).toEqual(before);
   });
 
-  it("responds 409 when parent is not the head of main", async () => {
-    // Another agent's changeset 2 (parent 1) is already on main.
-    db.prepare(
-      "INSERT INTO changesets (id, parent, author, message, timestamp) VALUES (2, 1, 'agent-2', 'planted', '2026-11-09T12:00:00.000Z')",
-    ).run();
-    db.prepare("UPDATE refs SET value = 2 WHERE name = 'main'").run();
+  it("reparents onto the head when no path conflicts", async () => {
+    // Another agent's changeset 2 changed a.txt; this request changes b.txt.
+    await commitOnHead({ "a.txt": "change" });
+    const hash = await storeBlob("new content of b.txt");
+
+    const res = await post({
+      ...valid,
+      parent: 1,
+      changes: [{ path: "b.txt", blobHash: hash }],
+    });
+
+    expect(res.statusCode).toBe(201);
+    const created = res.json<Changeset>();
+    expect(created.id).toBe(3);
+    expect(created.parent).toBe(2);
+    expect(created.changes).toEqual([{ path: "b.txt", blobHash: hash }]);
+    expect(readMainHead(db)).toBe(3);
+    const stored = await app.inject({ method: "GET", url: "/changesets/3" });
+    expect(stored.statusCode).toBe(200);
+    expect(stored.json()).toEqual(created);
+  });
+
+  it("reparents straight to the head in one jump", async () => {
+    await commitOnHead({ "a.txt": "change" });
+    await commitOnHead({ "c.txt": "change" });
+    await commitOnHead({ "d.txt": "change" });
+    const hash = await storeBlob("new content of b.txt");
+
+    const res = await post({
+      ...valid,
+      parent: 1,
+      changes: [{ path: "b.txt", blobHash: hash }],
+    });
+
+    expect(res.statusCode).toBe(201);
+    const created = res.json<Changeset>();
+    // One swap, straight to 4: no changeset on top of 2 or 3 is created.
+    expect(created.id).toBe(5);
+    expect(created.parent).toBe(4);
+    expect(snapshot()).toEqual({ changesets: 5, changes: 4, main: 5 });
+  });
+
+  it("limit: a change in the parent itself does not conflict", async () => {
+    await commitOnHead({ "a.txt": "change" });
+    await commitOnHead({ "b.txt": "change" });
+    await commitOnHead({ "c.txt": "change" });
+
+    // Parent 3 is in the middle of the history and changed b.txt itself.
+    const res = await post({
+      ...valid,
+      parent: 3,
+      changes: [{ path: "b.txt", blobHash: null }],
+    });
+
+    expect(res.statusCode).toBe(201);
+    const created = res.json<Changeset>();
+    expect(created.id).toBe(5);
+    expect(created.parent).toBe(4);
+    expect(readMainHead(db)).toBe(5);
+  });
+
+  it("responds 409 with the conflicting paths", async () => {
+    await commitOnHead({ "c.txt": "change", "a.txt": "change" });
+    const hash = await storeBlob("request content");
     const before = snapshot();
 
-    const res = await post({ ...valid, parent: 1 });
+    const res = await post({
+      ...valid,
+      parent: 1,
+      changes: [
+        { path: "./c.txt", blobHash: hash },
+        { path: "z.txt", blobHash: hash },
+        { path: "a.txt", blobHash: null },
+      ],
+    });
 
     expect(res.statusCode).toBe(409);
-    expect(res.json()).toEqual({
-      statusCode: 409,
-      error: "Conflict",
-      message: "parent is not the head of main",
-    });
+    // Unique, sorted and normalized ("./c.txt" is "c.txt"); z.txt was not
+    // changed after the parent.
+    expect(res.json()).toEqual(conflictBody(["a.txt", "c.txt"]));
     expect(snapshot()).toEqual(before);
   });
 
-  it("10 concurrent POSTs create exactly one changeset", async () => {
+  it.each<[string, "change" | "remove", "change" | "remove"]>([
+    ["removed by the request", "change", "remove"],
+    ["removed after the parent", "remove", "change"],
+  ])(
+    "a removal conflicts with a change on the other side (%s)",
+    async (_case, onHead, inRequest) => {
+      await commitOnHead({ "a.txt": onHead });
+      const blobHash =
+        inRequest === "remove" ? null : await storeBlob("request content");
+      const before = snapshot();
+
+      const res = await post({
+        ...valid,
+        parent: 1,
+        changes: [{ path: "a.txt", blobHash }],
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toEqual(conflictBody(["a.txt"]));
+      expect(snapshot()).toEqual(before);
+    },
+  );
+
+  it("limit: a change in the head conflicts", async () => {
+    await commitOnHead({ "a.txt": "change" });
+    await commitOnHead({ "b.txt": "change" });
+    await commitOnHead({ "c.txt": "change" });
+    const before = snapshot();
+
+    // Parent 3 is in the middle of the history; c.txt changed in 4, the head.
+    const res = await post({
+      ...valid,
+      parent: 3,
+      changes: [{ path: "c.txt", blobHash: null }],
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual(conflictBody(["c.txt"]));
+    expect(snapshot()).toEqual(before);
+  });
+
+  it("lists a path changed by several changesets once", async () => {
+    await commitOnHead({ "a.txt": "change" });
+    await commitOnHead({ "a.txt": "change" });
+    await commitOnHead({ "b.txt": "change" });
+    const before = snapshot();
+
+    const res = await post({
+      ...valid,
+      parent: 1,
+      changes: [{ path: "a.txt", blobHash: null }],
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual(conflictBody(["a.txt"]));
+    expect(snapshot()).toEqual(before);
+  });
+
+  it("lists conflicts in ascending order across changesets", async () => {
+    // z.txt changed before a.txt, and the request lists z.txt first: only
+    // sorting puts a.txt first.
+    await commitOnHead({ "z.txt": "change" });
+    await commitOnHead({ "a.txt": "change" });
+    const before = snapshot();
+
+    const res = await post({
+      ...valid,
+      parent: 1,
+      changes: [
+        { path: "z.txt", blobHash: null },
+        { path: "a.txt", blobHash: null },
+      ],
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual(conflictBody(["a.txt", "z.txt"]));
+    expect(snapshot()).toEqual(before);
+  });
+
+  it("10 concurrent POSTs on the same path: one 201, nine 409", async () => {
+    const hash = await storeBlob("shared content");
+
+    const responses = await Promise.all(
+      Array.from({ length: 10 }, (_, n) =>
+        post({
+          ...valid,
+          message: `agent ${n}`,
+          changes: [{ path: "same.txt", blobHash: hash }],
+        }),
+      ),
+    );
+
+    const statuses = responses.map((res) => res.statusCode).sort();
+    expect(statuses).toEqual([
+      201, 409, 409, 409, 409, 409, 409, 409, 409, 409,
+    ]);
+    const rejected = responses
+      .filter((res) => res.statusCode === 409)
+      .map((res) => res.json<unknown>());
+    expect(rejected).toEqual(
+      Array.from({ length: 9 }, () => conflictBody(["same.txt"])),
+    );
+    expect(readMainHead(db)).toBe(2);
+    expect(snapshot()).toEqual({ changesets: 2, changes: 1, main: 2 });
+  });
+
+  it("10 concurrent POSTs on different paths form one chain", async () => {
     // A non-null blobHash, so every request really awaits hasBlob before
     // reading the head.
     const hash = await storeBlob("shared content");
@@ -335,17 +543,23 @@ describe("POST /changesets", () => {
       ),
     );
 
-    const statuses = responses.map((res) => res.statusCode).sort();
-    expect(statuses).toEqual([
-      201, 409, 409, 409, 409, 409, 409, 409, 409, 409,
+    const statuses = responses.map((res) => res.statusCode);
+    expect(statuses).toEqual(Array.from({ length: 10 }, () => 201));
+    const created = responses
+      .map((res) => res.json<Changeset>())
+      .sort((a, b) => a.id - b.id);
+    // One chain: ids 2..11, each one's parent is the changeset before it.
+    expect(created.map((changeset) => changeset.id)).toEqual([
+      2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
     ]);
-    const created = responses.find((res) => res.statusCode === 201);
-    if (created === undefined) {
-      throw new Error("expected one 201 response");
-    }
-    expect(created.json<Changeset>().id).toBe(2);
-    expect(readMainHead(db)).toBe(2);
-    expect(db.prepare("SELECT count(*) FROM changesets").pluck().get()).toBe(2);
+    expect(created.map((changeset) => changeset.parent)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+    ]);
+    // All sent parent 1; only the first one kept it.
+    expect(created.filter((changeset) => changeset.parent !== 1)).toHaveLength(
+      9,
+    );
+    expect(snapshot()).toEqual({ changesets: 11, changes: 10, main: 11 });
   });
 
   it("responds 415 to a body sent as application/octet-stream", async () => {
@@ -388,11 +602,9 @@ describe("POST /changesets", () => {
   });
 
   it("precedence: missing blobs answer 400 before a stale parent's 409", async () => {
-    // Another agent's changeset 2 (parent 1) is already on main.
-    db.prepare(
-      "INSERT INTO changesets (id, parent, author, message, timestamp) VALUES (2, 1, 'agent-2', 'planted', '2026-11-09T12:00:00.000Z')",
-    ).run();
-    db.prepare("UPDATE refs SET value = 2 WHERE name = 'main'").run();
+    // Another agent's changeset 2 changed a.txt, the path of the request, so
+    // without the missing blob the answer would be a 409, not a reparent.
+    await commitOnHead({ "a.txt": "change" });
     const missing = hashContent("never stored");
     const before = snapshot();
 

@@ -21,9 +21,11 @@ tempo. Não é um sistema de controle de versão completo. Escopo completo em
    mudanças aplicadas, calculada sob demanda e cacheada.
 6. Só existe a ref `main`, atualizada com compare-and-swap
    (`UPDATE ... WHERE value = <esperado>`). Sem branches nem tags no Sprout.
-7. Commits sem lock. Se o CAS falhar: arquivos diferentes → troca o pai para a
-   nova cabeça e tenta de novo; algum arquivo em comum → `409`. Limite fixo de
-   tentativas → `503`. Nada de lock, mutex, fila ou merge de conteúdo.
+7. Commits sem lock. Se o `parent` do pedido não for a cabeça: nenhum caminho
+   do pedido alterado depois dele → troca o pai para a cabeça, num salto só (no
+   máximo uma troca por pedido); algum caminho em comum → `409` com
+   `conflicts`. Sem laço de tentativas. Nada de lock, mutex, fila ou merge de
+   conteúdo (ADR 0003).
 
 Se uma tarefa parecer exigir quebrar um princípio, PARE e pergunte antes.
 

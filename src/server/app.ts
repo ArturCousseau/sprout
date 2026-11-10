@@ -35,7 +35,11 @@
  * POST /changesets — body is JSON `{ parent, author, message, changes }`,
  * with `changes: [{ path, blobHash }]` (`blobHash: null` = file removed).
  *   201  changeset created and main moved to it; body is the core
- *        `Changeset`, the same as GET /changesets/:id returns
+ *        `Changeset`, the same as GET /changesets/:id returns. Its parent is
+ *        always the head of main: when `parent` is stale and no path of the
+ *        request was changed after it, the server reparents the changeset
+ *        onto the head, in one jump (ADR 0003). The client sees the reparent
+ *        by comparing the `parent` of the answer with the one it sent.
  *   400  invalid body: not a JSON object, a missing or wrongly typed field,
  *        `id` or `timestamp` sent (the server assigns them), an unknown
  *        field, a path normalizePath refuses, or the same path twice after
@@ -43,8 +47,11 @@
  *   404  `parent` does not exist
  *   400  some non-null blobHash is not in the blob store; the message lists
  *        the missing hashes
- *   409  `parent` is not the head of main. Provisional until #12, which
- *        reparents instead when the paths do not conflict.
+ *   409  some path of the request was changed by a changeset after `parent`,
+ *        up to the head of main (inclusive). Body:
+ *        `{ statusCode, error, message: "paths changed since parent",
+ *        conflicts }`, with `conflicts` = those paths, normalized, unique and
+ *        sorted.
  *   415  body sent as `application/octet-stream`. The parser registered for
  *        PUT /blobs applies to every route, so it reaches the handler as a
  *        Buffer; the handler answers "content-type must be application/json".
@@ -53,7 +60,8 @@
  *        run in one synchronous stretch (ADR 0004, decision 5), so it means a
  *        server bug.
  *   Precedence: the first failing check answers, in this order: 415
- *   octet-stream → 400 invalid body → 404 parent → 400 missing blobs → 409.
+ *   octet-stream → 400 invalid body → 404 parent → 400 missing blobs → 409
+ *   conflicts.
  *   Nothing is written unless the answer is 201.
  *   Answered by Fastify itself, before the handler runs (body with Fastify's
  *   extra `code` field):
@@ -64,7 +72,8 @@
  *        reaches the handler as a string and gets the 400 above;
  *        `application/octet-stream` gets the handler's own 415 above.
  *
- * Errors use Fastify's own error shape: `{ statusCode, error, message }`.
+ * Errors use Fastify's own error shape: `{ statusCode, error, message }`; the
+ * 409 of POST /changesets adds `conflicts`.
  *
  * A literal `../` in the URL (`/blobs/../x`) never reaches these handlers: the
  * router resolves the path first (`/x`) and answers 404 by itself. An encoded
@@ -78,6 +87,7 @@ import { InvalidPathError, normalizePath } from "../core/path.js";
 import { getBlob, HASH_FORMAT, hasBlob, putBlob } from "./blob-store.js";
 import {
   createChangeset,
+  readChangedPaths,
   readChangeset,
   readMainHead,
   type Db,
@@ -96,13 +106,33 @@ function sendError(reply: FastifyReply, statusCode: number, message: string) {
     .send({ statusCode, error: STATUS_CODES[statusCode], message });
 }
 
+/** 409 in Fastify's error shape, plus the paths in conflict. */
+function sendConflict(reply: FastifyReply, conflicts: string[]) {
+  return reply.code(409).send({
+    statusCode: 409,
+    error: STATUS_CODES[409],
+    message: "paths changed since parent",
+    conflicts,
+  });
+}
+
 export const DEFAULT_BODY_LIMIT = 16 * 1024 * 1024;
 
 /** Positive decimal integer, no leading zero. */
 const CHANGESET_ID_FORMAT = /^[1-9][0-9]*$/;
 
+/**
+ * A valid body: the parent the client started from and the changeset to
+ * create. The parent stays out of the changeset, because createChangeset
+ * uses the head of main as the parent.
+ */
+interface ChangesetRequest {
+  parent: number;
+  changeset: NewChangeset;
+}
+
 type ParseResult =
-  { ok: true; value: NewChangeset } | { ok: false; message: string };
+  { ok: true; value: ChangesetRequest } | { ok: false; message: string };
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -197,7 +227,7 @@ function parseChangesetBody(body: unknown): ParseResult {
   }
   return {
     ok: true,
-    value: { parent, author, message, changes: normalized },
+    value: { parent, changeset: { author, message, changes: normalized } },
   };
 }
 
@@ -282,7 +312,7 @@ export function buildApp({
     if (!parsed.ok) {
       return sendError(reply, 400, parsed.message);
     }
-    const { parent } = parsed.value;
+    const { parent, changeset: input } = parsed.value;
     if (!readChangeset(db, parent)) {
       return sendError(reply, 404, `changeset not found: ${parent}`);
     }
@@ -290,7 +320,7 @@ export function buildApp({
     // Each blob is checked once, even when several paths share it. Removals
     // (blobHash null) do not touch the blob store.
     const hashes = new Set<string>();
-    for (const change of parsed.value.changes) {
+    for (const change of input.changes) {
       if (change.blobHash !== null) {
         hashes.add(change.blobHash);
       }
@@ -304,15 +334,27 @@ export function buildApp({
     }
 
     // From here to the compare-and-swap there is no await, so no other
-    // request runs in between (ADR 0004, decision 5). All asynchronous checks
+    // request runs in between (ADR 0004, decision 5). Reading the head,
+    // finding the conflicts, deciding and creating the changeset all happen
+    // in this one synchronous stretch (ADR 0003). All asynchronous checks
     // must finish above this line.
     const head = readMainHead(db);
-    if (parent !== head) {
-      // Provisional: #12 replaces this with reparent and a 409 that lists
-      // the conflicting paths.
-      return sendError(reply, 409, "parent is not the head of main");
+    // Paths of the request that a changeset after the parent, up to the head,
+    // also changed. Both sides are normalized: the request's by
+    // parseChangesetBody, the stored ones because they went through it too.
+    // The order is readChangedPaths' (ORDER BY path).
+    const requested = new Set(input.changes.map((change) => change.path));
+    const conflicts = readChangedPaths(db, parent, head).filter((path) =>
+      requested.has(path),
+    );
+    if (conflicts.length > 0) {
+      return sendConflict(reply, conflicts);
     }
-    const result = createChangeset(db, head, parsed.value);
+    // No conflict: the changeset goes on top of the head. When `parent` is
+    // stale, this is the reparent, a single jump straight to the head; when
+    // it is the head, nothing changes. createChangeset takes the parent from
+    // `head`, never from the request.
+    const result = createChangeset(db, head, input);
     if (result.kind === "stale-head") {
       // Unreachable while reading the head and the compare-and-swap run in
       // one synchronous stretch (ADR 0004, decision 5): a server bug.

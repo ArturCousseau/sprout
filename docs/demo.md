@@ -91,12 +91,12 @@ atualizando a `main` naquele exato momento). As duas contam como rejeição.
 5. POST /changesets { parent, author, message, changes }
 6. 201: termina (aceito, possivelmente com o pai trocado pelo servidor)
    409: conta como conflito real e termina
-   503: conta como falha e termina
 ```
 
 O agente do Sprout **não faz retry**: quem resolve a troca de pai é o servidor,
-dentro do `POST /changesets`. O servidor conta, para cada pedido, quantas vezes
-trocou o pai, e devolve isso na resposta para entrar no placar.
+dentro do `POST /changesets`, no máximo uma vez por pedido e direto para a
+cabeça. O agente detecta a troca comparando o `parent` da resposta `201` com o
+que enviou, e isso entra no placar.
 
 ## 5. Os modos
 
@@ -141,7 +141,7 @@ Cenário B: 10 agentes, arquivos diferentes
 aceitos              10           10
 rejeições            23            0
 tentativas           33           10
-trocas de pai         -           14
+trocas de pai         -            9
 conflitos reais       0            0
 tempo total        4,1 s        0,3 s
 ```
@@ -154,8 +154,10 @@ _(números ilustrativos; os reais vêm da medição)_
 - **rejeições:** pushes recusados (git) ou pedidos recusados sem conflito real
   (Sprout; o esperado é zero).
 - **tentativas:** total de pushes (git) ou de pedidos `POST /changesets` (Sprout).
-- **trocas de pai:** quantas vezes o servidor do Sprout trocou o pai de um
-  changeset. Mostra o trabalho que o servidor fez no lugar do agente.
+- **trocas de pai:** quantas respostas `201` do Sprout vieram com um `parent`
+  diferente do enviado. Cada pedido troca de pai no máximo uma vez, então, com
+  10 agentes partindo da mesma cabeça, são no máximo 9 trocas. Mostra o
+  trabalho que o servidor fez no lugar do agente.
 - **conflitos reais:** mudanças no mesmo arquivo, rejeitadas nos dois sistemas.
 - **tempo total:** do ponto de sincronização até o último agente terminar.
 
