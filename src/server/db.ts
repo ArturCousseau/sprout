@@ -92,3 +92,82 @@ export function readChangeset(db: Db, id: number): Changeset | undefined {
     .all(id);
   return { ...row, changes };
 }
+
+/** A changeset to create. Paths must already be normalized. */
+export interface NewChangeset {
+  parent: number;
+  author: string;
+  message: string;
+  changes: Change[];
+}
+
+export type CreateChangesetResult =
+  { kind: "created"; changeset: Changeset } | { kind: "stale-head" };
+
+/** Thrown inside the transaction to roll it back when main is not expectedHead. */
+class StaleHeadError extends Error {}
+
+/**
+ * Inserts the changeset and its changes and moves main from expectedHead to
+ * the new id (compare-and-swap). Runs inside a transaction.
+ */
+function writeChangeset(
+  db: Db,
+  expectedHead: number,
+  input: NewChangeset,
+): Changeset {
+  const id = Number(
+    db
+      .prepare(
+        "INSERT INTO changesets (parent, author, message, timestamp) VALUES (?, ?, ?, ?)",
+      )
+      .run(input.parent, input.author, input.message, new Date().toISOString())
+      .lastInsertRowid,
+  );
+  const insertChange = db.prepare(
+    "INSERT INTO changes (changeset_id, path, blob_hash) VALUES (?, ?, ?)",
+  );
+  for (const change of input.changes) {
+    insertChange.run(id, change.path, change.blobHash);
+  }
+  const swapped = db
+    .prepare("UPDATE refs SET value = ? WHERE name = 'main' AND value = ?")
+    .run(id, expectedHead);
+  if (swapped.changes !== 1) {
+    throw new StaleHeadError();
+  }
+  const changeset = readChangeset(db, id);
+  if (!changeset) {
+    // No template literals in this file: #11 checks it has no interpolation.
+    throw new Error("changeset was not written: " + String(id));
+  }
+  return changeset;
+}
+
+/**
+ * Writes the changeset, its changes and the new main in one immediate
+ * transaction. If main no longer points at expectedHead, nothing is written
+ * and the result is "stale-head". Any other error rolls back and is rethrown.
+ *
+ * Trusts the caller for `input.parent`: it must be an existing changeset, and
+ * the POST /changesets handler also requires it to be expectedHead. This
+ * function checks neither. Called directly with the next id as parent, the
+ * foreign key accepts a changeset that is its own parent.
+ */
+export function createChangeset(
+  db: Db,
+  expectedHead: number,
+  input: NewChangeset,
+): CreateChangesetResult {
+  try {
+    const changeset = db
+      .transaction(writeChangeset)
+      .immediate(db, expectedHead, input);
+    return { kind: "created", changeset };
+  } catch (error) {
+    if (error instanceof StaleHeadError) {
+      return { kind: "stale-head" };
+    }
+    throw error;
+  }
+}

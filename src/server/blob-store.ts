@@ -16,7 +16,7 @@
  * because `link` cannot cross file systems (EXDEV).
  */
 import { randomUUID } from "node:crypto";
-import { link, readFile, rm, writeFile } from "node:fs/promises";
+import { access, link, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { deflate, inflate } from "node:zlib";
@@ -25,7 +25,7 @@ import { hashContent } from "../core/hash.js";
 const deflateAsync = promisify(deflate);
 const inflateAsync = promisify(inflate);
 
-const HASH_FORMAT = /^[0-9a-f]{64}$/;
+export const HASH_FORMAT = /^[0-9a-f]{64}$/;
 
 export type PutResult = "created" | "exists" | "invalid-hash" | "hash-mismatch";
 export type GetResult = Buffer | "invalid-hash" | "not-found";
@@ -56,6 +56,22 @@ export async function putBlob(
     return "created";
   } finally {
     await rm(tmp, { force: true });
+  }
+}
+
+/** true when <blobDir>/<hash> exists. Never reads or inflates the file. */
+export async function hasBlob(blobDir: string, hash: string): Promise<boolean> {
+  if (!HASH_FORMAT.test(hash)) {
+    return false;
+  }
+  try {
+    await access(join(blobDir, hash));
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return false;
+    }
+    throw error;
   }
 }
 
