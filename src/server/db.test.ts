@@ -74,13 +74,49 @@ describe("schema", () => {
   it("rejects a changeset whose parent does not exist", () => {
     const db = open();
 
+    // Parent 5 is below id 10, so the CHECK on parent passes and only the
+    // foreign key can refuse it.
     expect(() =>
       db
         .prepare(
-          "INSERT INTO changesets (id, parent, author, message, timestamp) VALUES (2, 99, 'a', 'm', 't')",
+          "INSERT INTO changesets (id, parent, author, message, timestamp) VALUES (10, 5, 'a', 'm', 't')",
         )
         .run(),
     ).toThrow(/FOREIGN KEY constraint failed/);
+  });
+
+  it.each([
+    ["parent 2, the next id: its own parent", 2],
+    ["parent 3, above the next id", 3],
+  ])(
+    "rejects a changeset whose parent is not below its id (%s)",
+    (_case, parent) => {
+      const db = open();
+      // No explicit id: the CHECK must see the id SQLite assigns.
+      const insert = db.prepare(
+        "INSERT INTO changesets (parent, author, message, timestamp) VALUES (?, 'a', 'm', 't')",
+      );
+
+      expect(() => insert.run(parent)).toThrow(/CHECK constraint failed/);
+      expect(db.prepare("SELECT count(*) FROM changesets").pluck().get()).toBe(
+        1,
+      );
+    },
+  );
+
+  it("accepts a parent below the new id", () => {
+    const db = open();
+
+    const result = db
+      .prepare(
+        "INSERT INTO changesets (parent, author, message, timestamp) VALUES (1, 'a', 'm', 't')",
+      )
+      .run();
+
+    expect(Number(result.lastInsertRowid)).toBe(2);
+    expect(
+      db.prepare("SELECT id, parent FROM changesets WHERE id = 2").get(),
+    ).toEqual({ id: 2, parent: 1 });
   });
 
   it.each([

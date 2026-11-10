@@ -15,7 +15,7 @@ export type Db = Database.Database;
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS changesets (
   id        INTEGER PRIMARY KEY,
-  parent    INTEGER REFERENCES changesets (id),
+  parent    INTEGER REFERENCES changesets (id) CHECK (parent < id),
   author    TEXT NOT NULL,
   message   TEXT NOT NULL,
   timestamp TEXT NOT NULL
@@ -151,8 +151,9 @@ function writeChangeset(
  *
  * Trusts the caller for `input.parent`: it must be an existing changeset, and
  * the POST /changesets handler also requires it to be expectedHead. This
- * function checks neither. Called directly with the next id as parent, the
- * foreign key accepts a changeset that is its own parent.
+ * function checks neither. The schema still refuses a parent that is not
+ * below the new id (`CHECK (parent < id)`), so a changeset cannot be its own
+ * parent.
  */
 export function createChangeset(
   db: Db,
