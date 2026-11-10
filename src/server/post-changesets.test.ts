@@ -368,4 +368,22 @@ describe("POST /changesets", () => {
     });
     expect(snapshot()).toEqual(before);
   });
+
+  it("precedence: a missing parent answers 404 before missing blobs", async () => {
+    const before = snapshot();
+
+    const res = await post({
+      ...valid,
+      parent: 99,
+      changes: [{ path: "a.txt", blobHash: hashContent("never stored") }],
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({
+      statusCode: 404,
+      error: "Not Found",
+      message: "changeset not found: 99",
+    });
+    expect(snapshot()).toEqual(before);
+  });
 });
