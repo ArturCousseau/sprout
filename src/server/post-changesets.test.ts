@@ -386,4 +386,28 @@ describe("POST /changesets", () => {
     });
     expect(snapshot()).toEqual(before);
   });
+
+  it("precedence: missing blobs answer 400 before a stale parent's 409", async () => {
+    // Another agent's changeset 2 (parent 1) is already on main.
+    db.prepare(
+      "INSERT INTO changesets (id, parent, author, message, timestamp) VALUES (2, 1, 'agent-2', 'planted', '2026-11-09T12:00:00.000Z')",
+    ).run();
+    db.prepare("UPDATE refs SET value = 2 WHERE name = 'main'").run();
+    const missing = hashContent("never stored");
+    const before = snapshot();
+
+    const res = await post({
+      ...valid,
+      parent: 1,
+      changes: [{ path: "a.txt", blobHash: missing }],
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({
+      statusCode: 400,
+      error: "Bad Request",
+      message: `missing blobs: ${missing}`,
+    });
+    expect(snapshot()).toEqual(before);
+  });
 });
