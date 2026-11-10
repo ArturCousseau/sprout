@@ -101,8 +101,18 @@ export const DEFAULT_BODY_LIMIT = 16 * 1024 * 1024;
 /** Positive decimal integer, no leading zero. */
 const CHANGESET_ID_FORMAT = /^[1-9][0-9]*$/;
 
+/**
+ * A valid body: the parent the client started from and the changeset to
+ * create. The parent stays out of the changeset, because createChangeset
+ * uses the head of main as the parent.
+ */
+interface ChangesetRequest {
+  parent: number;
+  changeset: NewChangeset;
+}
+
 type ParseResult =
-  { ok: true; value: NewChangeset } | { ok: false; message: string };
+  { ok: true; value: ChangesetRequest } | { ok: false; message: string };
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -197,7 +207,7 @@ function parseChangesetBody(body: unknown): ParseResult {
   }
   return {
     ok: true,
-    value: { parent, author, message, changes: normalized },
+    value: { parent, changeset: { author, message, changes: normalized } },
   };
 }
 
@@ -282,7 +292,7 @@ export function buildApp({
     if (!parsed.ok) {
       return sendError(reply, 400, parsed.message);
     }
-    const { parent } = parsed.value;
+    const { parent, changeset: input } = parsed.value;
     if (!readChangeset(db, parent)) {
       return sendError(reply, 404, `changeset not found: ${parent}`);
     }
@@ -290,7 +300,7 @@ export function buildApp({
     // Each blob is checked once, even when several paths share it. Removals
     // (blobHash null) do not touch the blob store.
     const hashes = new Set<string>();
-    for (const change of parsed.value.changes) {
+    for (const change of input.changes) {
       if (change.blobHash !== null) {
         hashes.add(change.blobHash);
       }
@@ -312,7 +322,7 @@ export function buildApp({
       // the conflicting paths.
       return sendError(reply, 409, "parent is not the head of main");
     }
-    const result = createChangeset(db, head, parsed.value);
+    const result = createChangeset(db, head, input);
     if (result.kind === "stale-head") {
       // Unreachable while reading the head and the compare-and-swap run in
       // one synchronous stretch (ADR 0004, decision 5): a server bug.

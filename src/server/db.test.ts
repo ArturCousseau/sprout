@@ -205,7 +205,6 @@ describe("createChangeset", () => {
     const hash = hashContent("new content of b.txt");
 
     const result = createChangeset(db, 1, {
-      parent: 1,
       author: "agent-1",
       message: "first change",
       changes: [
@@ -234,12 +233,35 @@ describe("createChangeset", () => {
     expect(readChangeset(db, 2)).toEqual(result.changeset);
   });
 
+  it("createChangeset uses expectedHead as the parent", () => {
+    const db = open();
+    createChangeset(db, 1, {
+      author: "agent-1",
+      message: "first change",
+      changes: [{ path: "a.txt", blobHash: null }],
+    });
+    const input = {
+      author: "agent-2",
+      message: "second change",
+      changes: [{ path: "b.txt", blobHash: null }],
+    };
+
+    const result = createChangeset(db, 2, input);
+
+    expect(result.kind).toBe("created");
+    if (result.kind !== "created") {
+      throw new Error(`expected kind "created", got "${result.kind}"`);
+    }
+    expect(result.changeset.parent).toBe(2);
+    expect(readChangeset(db, 3)?.parent).toBe(2);
+    expect(readMainHead(db)).toBe(3);
+  });
+
   it("createChangeset rolls back when a change fails", () => {
     const db = open();
 
     expect(() =>
       createChangeset(db, 1, {
-        parent: 1,
         author: "agent-1",
         message: "repeated path",
         changes: [
@@ -256,17 +278,24 @@ describe("createChangeset", () => {
 
   it("createChangeset returns stale-head and writes nothing", () => {
     const db = open();
-
-    const result = createChangeset(db, 99, {
-      parent: 1,
+    createChangeset(db, 1, {
       author: "agent-1",
-      message: "stale expected head",
+      message: "first change",
       changes: [{ path: "a.txt", blobHash: null }],
     });
 
+    // Main is at 2; expecting 1 makes the compare-and-swap fail. The new
+    // changeset's parent would be 1, which exists and is below the new id, so
+    // the foreign key and the CHECK pass.
+    const result = createChangeset(db, 1, {
+      author: "agent-2",
+      message: "stale expected head",
+      changes: [{ path: "b.txt", blobHash: null }],
+    });
+
     expect(result.kind).toBe("stale-head");
-    expect(db.prepare("SELECT count(*) FROM changesets").pluck().get()).toBe(1);
-    expect(db.prepare("SELECT count(*) FROM changes").pluck().get()).toBe(0);
-    expect(readMainHead(db)).toBe(1);
+    expect(db.prepare("SELECT count(*) FROM changesets").pluck().get()).toBe(2);
+    expect(db.prepare("SELECT count(*) FROM changes").pluck().get()).toBe(1);
+    expect(readMainHead(db)).toBe(2);
   });
 });
