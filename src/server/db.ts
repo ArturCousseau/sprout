@@ -148,6 +148,11 @@ function writeChangeset(
  * Writes the changeset, its changes and the new main in one immediate
  * transaction. If main no longer points at expectedHead, nothing is written
  * and the result is "stale-head". Any other error rolls back and is rethrown.
+ *
+ * Trusts the caller for `input.parent`: it must be an existing changeset, and
+ * the POST /changesets handler also requires it to be expectedHead. This
+ * function checks neither. Called directly with the next id as parent, the
+ * foreign key accepts a changeset that is its own parent.
  */
 export function createChangeset(
   db: Db,
