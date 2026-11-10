@@ -94,6 +94,29 @@ export function readChangeset(db: Db, id: number): Changeset | undefined {
 }
 
 /**
+ * Paths changed by the changesets after `after` and up to `upTo` (inclusive),
+ * each once, sorted by path (SQLite's BINARY order). Removals count as
+ * changes. Empty when `after` equals `upTo`.
+ *
+ * Walks the id range, not the parent pointers. The result is only right while
+ * the history is one line, with every changeset created on top of the head,
+ * as createChangeset does. Otherwise it returns paths of changesets that are
+ * not ancestors of `upTo`, without any error. See ADR 0003.
+ */
+export function readChangedPaths(
+  db: Db,
+  after: number,
+  upTo: number,
+): string[] {
+  return db
+    .prepare<[number, number], string>(
+      "SELECT DISTINCT path FROM changes WHERE changeset_id > ? AND changeset_id <= ? ORDER BY path",
+    )
+    .pluck()
+    .all(after, upTo);
+}
+
+/**
  * A changeset to create. Paths must already be normalized. There is no
  * parent: createChangeset uses the head it expects to replace.
  */
