@@ -480,6 +480,27 @@ describe("POST /changesets", () => {
     expect(snapshot()).toEqual(before);
   });
 
+  it("lists conflicts in ascending order across changesets", async () => {
+    // z.txt changed before a.txt, and the request lists z.txt first: only
+    // sorting puts a.txt first.
+    await commitOnHead({ "z.txt": "change" });
+    await commitOnHead({ "a.txt": "change" });
+    const before = snapshot();
+
+    const res = await post({
+      ...valid,
+      parent: 1,
+      changes: [
+        { path: "z.txt", blobHash: null },
+        { path: "a.txt", blobHash: null },
+      ],
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual(conflictBody(["a.txt", "z.txt"]));
+    expect(snapshot()).toEqual(before);
+  });
+
   it("10 concurrent POSTs on the same path: one 201, nine 409", async () => {
     const hash = await storeBlob("shared content");
 
