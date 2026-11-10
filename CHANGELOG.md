@@ -26,6 +26,13 @@ para a issue e para o PR de onde veio. O processo de release está no
   `GET /changesets/:id` e o ADR 0004, sobre SQLite num processo só
   ([#10](https://github.com/ArturCousseau/sprout/issues/10),
   [#34](https://github.com/ArturCousseau/sprout/pull/34)).
+- `POST /changesets`: cria o changeset quando `parent` é a cabeça da `main` e
+  avança a `main` com compare-and-swap, numa transação só; valida o corpo à
+  mão, normaliza os caminhos, confere os blobs (`hasBlob`, sem ler o arquivo),
+  responde `404` para pai inexistente e `409` provisório quando `parent` não é
+  a cabeça (o reparent fica para a #12)
+  ([#11](https://github.com/ArturCousseau/sprout/issues/11),
+  [#35](https://github.com/ArturCousseau/sprout/pull/35)).
 
 ### Alterado
 
