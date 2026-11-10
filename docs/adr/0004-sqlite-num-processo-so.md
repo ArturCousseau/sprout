@@ -72,6 +72,9 @@ ADR 0001.
 6. **Sem `CHECK (parent < id)` no schema.** Alternativa considerada: a
    constraint, para impedir ciclos entre changesets. Rejeitada porque quebraria
    a #12: o reparent pode dar a um changeset já criado um pai com id maior.
+   **Nota (#12):** decisão revertida pelo ADR 0003, decisão 7. O reparent
+   escolhe o pai antes do `INSERT`, e esse pai é a cabeça, que tem id menor. O
+   schema passou a ter `CHECK (parent < id)`.
 7. **O id é `INTEGER PRIMARY KEY`, sem `AUTOINCREMENT`.** O SQLite escolhe "one
    larger than the largest ROWID" e começa em 1. Alternativa considerada:
    `AUTOINCREMENT`, que só serve para impedir o reuso de ids de linhas

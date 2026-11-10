@@ -33,9 +33,22 @@ para a issue e para o PR de onde veio. O processo de release está no
   a cabeça (o reparent fica para a #12)
   ([#11](https://github.com/ArturCousseau/sprout/issues/11),
   [#35](https://github.com/ArturCousseau/sprout/pull/35)).
+- Reparent e `409` com conflitos no `POST /changesets`: se nenhum caminho do
+  pedido foi alterado depois do `parent`, o changeset é criado sobre a cabeça
+  da `main`, numa troca de pai só; se algum foi, responde `409` com
+  `conflicts`. Inclui `readChangedPaths`, `CHECK (parent < id)` no schema e o
+  ADR 0003, sobre commits sem lock e a política de reparent
+  ([#12](https://github.com/ArturCousseau/sprout/issues/12),
+  [#PR](https://github.com/ArturCousseau/sprout/pull/PR)).
 
 ### Alterado
 
+- `POST /changesets`: o `409` provisório para `parent` desatualizado deixa de
+  existir, e o `createChangeset` passa a usar a cabeça esperada como pai, sem
+  receber `parent`. O princípio 7 do CLAUDE.md e o `docs/escopo.md` deixam de
+  prever o laço de tentativas e o `503`
+  ([#12](https://github.com/ArturCousseau/sprout/issues/12),
+  [#PR](https://github.com/ArturCousseau/sprout/pull/PR)).
 - Revisão por IA: limite de turnos sobe de 5 para 10, e o CONTRIBUTING orienta
   colar os critérios da issue no comentário do `@claude`
   ([#30](https://github.com/ArturCousseau/sprout/issues/30),
