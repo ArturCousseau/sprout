@@ -78,6 +78,7 @@ import { InvalidPathError, normalizePath } from "../core/path.js";
 import { getBlob, HASH_FORMAT, hasBlob, putBlob } from "./blob-store.js";
 import {
   createChangeset,
+  readChangedPaths,
   readChangeset,
   readMainHead,
   type Db,
@@ -94,6 +95,16 @@ function sendError(reply: FastifyReply, statusCode: number, message: string) {
   return reply
     .code(statusCode)
     .send({ statusCode, error: STATUS_CODES[statusCode], message });
+}
+
+/** 409 in Fastify's error shape, plus the paths in conflict. */
+function sendConflict(reply: FastifyReply, conflicts: string[]) {
+  return reply.code(409).send({
+    statusCode: 409,
+    error: STATUS_CODES[409],
+    message: "paths changed since parent",
+    conflicts,
+  });
 }
 
 export const DEFAULT_BODY_LIMIT = 16 * 1024 * 1024;
@@ -314,12 +325,25 @@ export function buildApp({
     }
 
     // From here to the compare-and-swap there is no await, so no other
-    // request runs in between (ADR 0004, decision 5). All asynchronous checks
+    // request runs in between (ADR 0004, decision 5). Reading the head,
+    // finding the conflicts, deciding and creating the changeset all happen
+    // in this one synchronous stretch (ADR 0003). All asynchronous checks
     // must finish above this line.
     const head = readMainHead(db);
+    // Paths of the request that a changeset after the parent, up to the head,
+    // also changed. Both sides are normalized: the request's by
+    // parseChangesetBody, the stored ones because they went through it too.
+    // The order is readChangedPaths' (ORDER BY path).
+    const requested = new Set(input.changes.map((change) => change.path));
+    const conflicts = readChangedPaths(db, parent, head).filter((path) =>
+      requested.has(path),
+    );
+    if (conflicts.length > 0) {
+      return sendConflict(reply, conflicts);
+    }
     if (parent !== head) {
-      // Provisional: #12 replaces this with reparent and a 409 that lists
-      // the conflicting paths.
+      // Provisional: a stale parent without conflicts. The next step of #12
+      // reparents it onto the head instead.
       return sendError(reply, 409, "parent is not the head of main");
     }
     const result = createChangeset(db, head, input);
