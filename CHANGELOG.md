@@ -39,7 +39,7 @@ para a issue e para o PR de onde veio. O processo de release está no
   `conflicts`. Inclui `readChangedPaths`, `CHECK (parent < id)` no schema e o
   ADR 0003, sobre commits sem lock e a política de reparent
   ([#12](https://github.com/ArturCousseau/sprout/issues/12),
-  [#PR](https://github.com/ArturCousseau/sprout/pull/PR)).
+  [#36](https://github.com/ArturCousseau/sprout/pull/36)).
 
 ### Alterado
 
@@ -48,7 +48,7 @@ para a issue e para o PR de onde veio. O processo de release está no
   receber `parent`. O princípio 7 do CLAUDE.md e o `docs/escopo.md` deixam de
   prever o laço de tentativas e o `503`
   ([#12](https://github.com/ArturCousseau/sprout/issues/12),
-  [#PR](https://github.com/ArturCousseau/sprout/pull/PR)).
+  [#36](https://github.com/ArturCousseau/sprout/pull/36)).
 - Revisão por IA: limite de turnos sobe de 5 para 10, e o CONTRIBUTING orienta
   colar os critérios da issue no comentário do `@claude`
   ([#30](https://github.com/ArturCousseau/sprout/issues/30),
