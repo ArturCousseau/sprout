@@ -19,6 +19,11 @@ coverage/
 # ─────
 .DS_Store
 
+# CLAUDE CODE
+# ───────────
+# Configurações locais de cada máquina; não vão para o repositório.
+.claude/settings.local.json
+
 # DEMO
 # ────
 # Repositórios git e dados do servidor recriados a cada execução.
