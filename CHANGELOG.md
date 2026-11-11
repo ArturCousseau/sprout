@@ -21,7 +21,8 @@ para a issue e para o PR de onde veio. O processo de release está no
   por operação. O `docs/demo.md` documenta a barreira, os tipos de rejeição,
   a largada, o registro e o JSON, e as versões validadas (git 2.56.0, node
   26.12.0, também em `engines`)
-  ([#14](https://github.com/ArturCousseau/sprout/issues/14)).
+  ([#14](https://github.com/ArturCousseau/sprout/issues/14),
+  [#41](https://github.com/ArturCousseau/sprout/pull/41)).
 
 ### Alterado
 
