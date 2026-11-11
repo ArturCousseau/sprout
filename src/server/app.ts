@@ -32,6 +32,15 @@
  *   414  :id longer than Fastify's maxParamLength (100 chars). Fastify answers
  *        this itself, before the handler runs.
  *
+ * GET /changesets/:id/tree
+ *   200  `{ id, entries: [{ path, blobHash }] }`: the parent's tree with the
+ *        changeset's changes applied, entries sorted by path, removed files
+ *        left out. Computed on demand and cached (ADR 0005).
+ *   400  same as GET /changesets/:id
+ *   404  no changeset with this id
+ *   414  same as GET /changesets/:id: Fastify's router answers it, with
+ *        `error: "Bad Request"` and `code: "FST_ERR_MAX_PARAM_LENGTH"`.
+ *
  * POST /changesets — body is JSON `{ parent, author, message, changes }`,
  * with `changes: [{ path, blobHash }]` (`blobHash: null` = file removed).
  *   201  changeset created and main moved to it; body is the core
@@ -84,6 +93,7 @@ import { STATUS_CODES } from "node:http";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import type { Change } from "../core/changeset.js";
 import { InvalidPathError, normalizePath } from "../core/path.js";
+import { treeEntries } from "../core/tree.js";
 import { getBlob, HASH_FORMAT, hasBlob, putBlob } from "./blob-store.js";
 import {
   createChangeset,
@@ -93,6 +103,7 @@ import {
   type Db,
   type NewChangeset,
 } from "./db.js";
+import { createTreeReader } from "./tree.js";
 
 export interface AppOptions {
   blobDir: string;
@@ -120,6 +131,19 @@ export const DEFAULT_BODY_LIMIT = 16 * 1024 * 1024;
 
 /** Positive decimal integer, no leading zero. */
 const CHANGESET_ID_FORMAT = /^[1-9][0-9]*$/;
+
+/**
+ * The `:id` of a changeset route as a number, or undefined when it is not a
+ * positive decimal integer without a leading zero, or is above
+ * Number.MAX_SAFE_INTEGER.
+ */
+function parseChangesetId(id: string): number | undefined {
+  const numericId = Number(id);
+  if (!CHANGESET_ID_FORMAT.test(id) || !Number.isSafeInteger(numericId)) {
+    return undefined;
+  }
+  return numericId;
+}
 
 /**
  * A valid body: the parent the client started from and the changeset to
@@ -237,6 +261,10 @@ export function buildApp({
   bodyLimit = DEFAULT_BODY_LIMIT,
 }: AppOptions): FastifyInstance {
   const app = Fastify({ bodyLimit });
+  // One cache per app, so one per server process (ADR 0005). Only the
+  // GET /changesets/:id/tree handler uses it: trees are computed on demand,
+  // never when a changeset is created.
+  const readTree = createTreeReader((id) => readChangeset(db, id));
 
   app.addHook("onReady", async () => {
     await mkdir(blobDir, { recursive: true });
@@ -291,8 +319,8 @@ export function buildApp({
 
   app.get<{ Params: { id: string } }>("/changesets/:id", (request, reply) => {
     const { id } = request.params;
-    const numericId = Number(id);
-    if (!CHANGESET_ID_FORMAT.test(id) || !Number.isSafeInteger(numericId)) {
+    const numericId = parseChangesetId(id);
+    if (numericId === undefined) {
       return sendError(reply, 400, `invalid changeset id: ${id}`);
     }
     const changeset = readChangeset(db, numericId);
@@ -301,6 +329,23 @@ export function buildApp({
     }
     return changeset;
   });
+
+  app.get<{ Params: { id: string } }>(
+    "/changesets/:id/tree",
+    (request, reply) => {
+      const { id } = request.params;
+      const numericId = parseChangesetId(id);
+      if (numericId === undefined) {
+        return sendError(reply, 400, `invalid changeset id: ${id}`);
+      }
+      const tree = readTree(numericId);
+      if (!tree) {
+        return sendError(reply, 404, `changeset not found: ${id}`);
+      }
+      // treeEntries, never the Map itself: JSON.stringify turns a Map into {}.
+      return { id: numericId, entries: treeEntries(tree) };
+    },
+  );
 
   app.post<{ Body: unknown }>("/changesets", async (request, reply) => {
     // The octet-stream parser registered above for PUT /blobs applies to every

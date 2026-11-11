@@ -136,6 +136,23 @@ Respostas: `201` (criado, possivelmente com o pai trocado), `400` (pedido
 inválido ou blob ausente), `404` (`parent` não existe), `409` (conflito, com
 `conflicts`), `500` (bug do servidor).
 
+### `GET /changesets/:id/tree` em detalhe
+
+Devolve a árvore de arquivos do changeset `:id`: a árvore do pai com as
+`changes` do changeset aplicadas (princípio 5), calculada sob demanda e
+guardada em cache (ADR 0005).
+
+Corpo do `200`: `{ id, entries: [{ path, blobHash }] }`, com `entries`
+ordenadas por `path` e sem os arquivos removidos. A raiz (id 1) tem `entries`
+vazia. Remover um caminho que não está na árvore do pai não muda a árvore: o
+`POST /changesets` aceita essa remoção, e o cálculo a ignora.
+
+Respostas: `200` (a árvore), `400` (`:id` não é um inteiro decimal positivo
+sem zero à esquerda, ou passa de `Number.MAX_SAFE_INTEGER`; a mesma validação
+do `GET /changesets/:id`), `404` (changeset não existe), `414` (`:id` com mais
+de 100 caracteres; quem responde é o roteador do Fastify, antes do handler,
+com `error: "Bad Request"` e `code: "FST_ERR_MAX_PARAM_LENGTH"`).
+
 ## 6. A demo
 
 Detalhada em `03-demo.md`. Em resumo:
