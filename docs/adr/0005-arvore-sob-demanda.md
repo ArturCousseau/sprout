@@ -31,7 +31,10 @@ Ele responde `201` e grava a linha em `changes` com `blob_hash` NULL.
    cache nunca é invalidado porque um changeset nunca muda depois de criado. Um
    id que não existe não entra no cache, para que seja encontrado quando for
    criado. As árvores em cache são compartilhadas, então aplicar as mudanças
-   sempre gera um `Map` novo e nunca altera o do pai.
+   sempre gera um `Map` novo e nunca altera o do pai. Cada `buildApp` tem seu
+   próprio cache: dois apps sobre o mesmo banco calculam as mesmas árvores, o
+   que é seguro porque os changesets são imutáveis e ids inexistentes não são
+   cacheados.
 2. **Remover um caminho ausente na árvore do pai é ignorado no cálculo.** É o
    caso do E1. O `POST /changesets` não muda: continua aceitando essa remoção.
 3. **Cálculo por laço, não por recursão.** O servidor sobe pelos pais até o
