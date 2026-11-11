@@ -10,6 +10,15 @@ para a issue e para o PR de onde veio. O processo de release está no
 
 ## [Não lançado]
 
+### Alterado
+
+- Regras de processo no repositório: seção "Fluxo de trabalho" no CLAUDE.md,
+  bloco pronto para o pedido ao `@claude` no CONTRIBUTING, itens de release e
+  de código de saída no template de PR, e `.claude/settings.local.json` no
+  `.gitignore`, que fazia o `pnpm format:check` falhar localmente
+  ([#39](https://github.com/ArturCousseau/sprout/issues/39),
+  [#40](https://github.com/ArturCousseau/sprout/pull/40)).
+
 ## [0.2.0] - 2026-11-11
 
 ### Adicionado

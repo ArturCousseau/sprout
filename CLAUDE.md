@@ -74,3 +74,18 @@ test e build e corrija o que falhar.
   `CONTRIBUTING.md`.
 - Estou aprendendo TypeScript e backend: ao terminar, explique o que mudou de
   forma que alguém que sabe JavaScript básico e Java entenda.
+
+## Fluxo de trabalho
+
+- Correção é sempre um commit novo e separado. Nada de `amend`, `rebase` ou
+  `reset` sem perguntar.
+- Mutação de teste ou reconfirmação de vermelho só sobre código commitado:
+  desfaça com `git restore` e confira `git status` vazio antes de seguir.
+- Antes de prever o resultado de uma mutação, monte a tabela teste → resultado
+  esperado.
+- Edite arquivos só com as ferramentas de edição. Nada de `cat >>`, `sed -i`
+  ou `cp` por cima de um arquivo.
+- Copie o plano para `~/notas-sprout/<N>/` (N = número da issue) antes de
+  qualquer ajuste. Cada ajuste é feito nesse arquivo e mostrado em diff.
+- Conceito novo: explique em poucas linhas quando ele surgir, além da
+  explicação final pedida em "Convenções".
