@@ -167,6 +167,16 @@ describe("writeResult / readResult", () => {
       "agents[1].rejections must be",
     ],
     [
+      "unknown rejection type",
+      gitAWithAgent1((a) => (a.rejections = { "fetch first": 1 })),
+      'agents[1].rejections has unknown type "fetch first"',
+    ],
+    [
+      "rejection type from the prototype",
+      gitAWithAgent1((a) => (a.rejections = { constructor: 1 })),
+      'agents[1].rejections has unknown type "constructor"',
+    ],
+    [
       "rejection count as a string",
       gitAWithAgent1((a) => (a.rejections = { "ref-lock": "1" })),
       'agents[1].rejections["ref-lock"] must be',

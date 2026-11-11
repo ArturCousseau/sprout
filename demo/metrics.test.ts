@@ -11,7 +11,7 @@ const gitB: AgentResult[] = Array.from({ length: 10 }, (_, i) => {
   const lost = i; // agent 1 lost 0 rounds, agent 10 lost 9
   const fetchFirst = Math.ceil(lost / 2);
   const refLock = lost - fetchFirst;
-  const rejections: Record<string, number> = {};
+  const rejections: AgentResult["rejections"] = {};
   if (fetchFirst > 0) rejections["fetch-first"] = fetchFirst;
   if (refLock > 0) rejections["ref-lock"] = refLock;
   return {

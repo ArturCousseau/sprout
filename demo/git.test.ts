@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { gitEnv, localGitConfig } from "./git.js";
+import { classifyPush, gitEnv, localGitConfig } from "./git.js";
+import { HarnessError } from "./harness-error.js";
 
 const run = promisify(execFile);
 
@@ -136,5 +137,104 @@ describe("git config isolation (integration, reproduces E4)", () => {
     expect(without.filter((s) => s === "global").length).toBeGreaterThan(0);
     expect(withGitEnv.filter((s) => s === "system")).toEqual([]);
     expect(withGitEnv.filter((s) => s === "global")).toEqual([]);
+  });
+});
+
+describe("classifyPush", () => {
+  // Real stdout of `git push --porcelain` from Phase 1 (~/notas-sprout/14/),
+  // with only the path of the `To` line replaced by <central>:
+  //   accepted.txt    ← e1/porcelain-1/out2 (exit code 0)
+  //   fetch-first.txt ← e3/round-1/out5     (exit code 1)
+  //   ref-lock.txt    ← e1/porcelain-1/out1 (exit code 1)
+  async function fixture(name: string): Promise<string> {
+    return readFile(
+      join(import.meta.dirname, "fixtures", "porcelain", `${name}.txt`),
+      "utf8",
+    );
+  }
+
+  it("real accepted push (code 0) → accepted", async () => {
+    expect(classifyPush(await fixture("accepted"), 0)).toBe("accepted");
+  });
+
+  it("real fetch first (code 1) → fetch-first", async () => {
+    expect(classifyPush(await fixture("fetch-first"), 1)).toBe("fetch-first");
+  });
+
+  it("real lost ref race (code 1) → ref-lock", async () => {
+    expect(classifyPush(await fixture("ref-lock"), 1)).toBe("ref-lock");
+  });
+
+  // Synthetic from here on: built by hand, not captured from git.
+  const line = (flag: string, summary: string, ref = "refs/heads/main") =>
+    `To <central>\n${flag}\trefs/heads/main:${ref}\t${summary}\nDone\n`;
+
+  it.each([
+    ["+", "f411491...4f2287d (forced update)"],
+    ["*", "[new branch]"],
+  ])("synthetic: flag %j with code 0 → accepted", (flag, summary) => {
+    expect(classifyPush(line(flag, summary), 0)).toBe("accepted");
+  });
+
+  it.each([
+    [
+      "no status line",
+      "To <central>\nDone\n",
+      1,
+      "expected 1 status line, got 0",
+    ],
+    ["empty stdout", "", 1, "expected 1 status line, got 0"],
+    [
+      "two status lines",
+      line("!", "[rejected] (fetch first)") +
+        "!\trefs/heads/x:refs/heads/x\t[rejected] (fetch first)\n",
+      1,
+      "expected 1 status line, got 2",
+    ],
+    [
+      "another ref",
+      line(" ", "f411491..4f2287d", "refs/heads/dev"),
+      0,
+      "status line is not for main",
+    ],
+    [
+      "unknown rejection",
+      line("!", "[rejected] (non-fast-forward)"),
+      1,
+      'unknown rejection: "[rejected] (non-fast-forward)"',
+    ],
+    [
+      "summary from the prototype",
+      line("!", "constructor"),
+      1,
+      'unknown rejection: "constructor"',
+    ],
+    [
+      "unknown flag (= up to date)",
+      line("=", "[up to date]"),
+      0,
+      'unknown flag "="',
+    ],
+    [
+      "accepted line with code 1",
+      line(" ", "f411491..4f2287d"),
+      1,
+      "accepted line with exit code 1",
+    ],
+    [
+      "rejected line with code 0",
+      line("!", "[rejected] (fetch first)"),
+      0,
+      "rejected line with exit code 0",
+    ],
+    [
+      "rejected line with code 128",
+      line("!", "[remote rejected] (incorrect old value provided)"),
+      128,
+      "rejected line with exit code 128",
+    ],
+  ])("synthetic: %s → HarnessError", (_label, stdout, code, message) => {
+    expect(() => classifyPush(stdout, code)).toThrow(HarnessError);
+    expect(() => classifyPush(stdout, code)).toThrow(message);
   });
 });

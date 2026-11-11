@@ -1,0 +1,3 @@
+To <central>
+!	refs/heads/main:refs/heads/main	[remote rejected] (incorrect old value provided)
+Done

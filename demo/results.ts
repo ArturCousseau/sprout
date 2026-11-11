@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { AgentResult } from "./metrics.js";
+import { type AgentResult, REJECTION_TYPES } from "./metrics.js";
 import { SCENARIOS, type ScenarioId } from "./scenarios.js";
 
 export type System = "git" | "sprout";
@@ -69,6 +69,7 @@ export async function readResult(
 }
 
 const OUTCOMES = new Set(["accepted", "conflict"]);
+const REJECTIONS = new Set<string>(REJECTION_TYPES);
 // A Set, not an object with `in`: "constructor" in {} is true through the
 // prototype (same reason as in the server).
 const RUN_FIELDS = new Set(["system", "scenario", "agents"]);
@@ -147,6 +148,9 @@ function checkRunResult(
       return `${at}.rejections must be an object`;
     }
     for (const [type, count] of Object.entries(agent.rejections)) {
+      if (!REJECTIONS.has(type)) {
+        return `${at}.rejections has unknown type "${type}" (expected ${REJECTION_TYPES.join(" or ")})`;
+      }
       if (!isNonNegativeInteger(count)) {
         return `${at}.rejections["${type}"] must be a non-negative integer`;
       }
