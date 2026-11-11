@@ -46,7 +46,7 @@ para a issue e para o PR de onde veio. O processo de release está no
   caminho ausente é ignorada. Inclui `applyChanges` e `treeEntries` no core e
   o ADR 0005, sobre a árvore sob demanda
   ([#13](https://github.com/ArturCousseau/sprout/issues/13),
-  [#PR](https://github.com/ArturCousseau/sprout/pull/PR)).
+  [#37](https://github.com/ArturCousseau/sprout/pull/37)).
 
 ### Alterado
 
