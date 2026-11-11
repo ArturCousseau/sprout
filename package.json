@@ -14,7 +14,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "build": "tsc -p tsconfig.build.json",
-    "start": "tsx src/server/main.ts"
+    "start": "tsx src/server/main.ts",
+    "demo:reset": "tsx demo/reset-main.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
