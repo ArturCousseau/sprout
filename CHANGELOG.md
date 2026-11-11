@@ -10,6 +10,8 @@ para a issue e para o PR de onde veio. O processo de release está no
 
 ## [Não lançado]
 
+## [0.2.0] - 2026-11-11
+
 ### Adicionado
 
 - Core do domínio: tipos `Changeset` e `Change`, hash SHA-256 do conteúdo,
@@ -82,5 +84,6 @@ para a issue e para o PR de onde veio. O processo de release está no
   ([#7](https://github.com/ArturCousseau/sprout/issues/7),
   [#28](https://github.com/ArturCousseau/sprout/pull/28)).
 
-[Não lançado]: https://github.com/ArturCousseau/sprout/compare/v0.1.0...HEAD
+[Não lançado]: https://github.com/ArturCousseau/sprout/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ArturCousseau/sprout/releases/tag/v0.2.0
 [0.1.0]: https://github.com/ArturCousseau/sprout/releases/tag/v0.1.0
