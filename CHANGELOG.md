@@ -10,6 +10,19 @@ para a issue e para o PR de onde veio. O processo de release está no
 
 ## [Não lançado]
 
+### Adicionado
+
+- Base comum da demo em `demo/`: `pnpm demo:reset` (apaga só `demo/tmp`),
+  cenários A, B e C com `--cenario`, barreira de largada em memória, registro
+  por agente e resumo do placar, resultados gravados e lidos em JSON, config
+  do git isolada para os agentes, classificação das rejeições do
+  `git push --porcelain` (`fetch-first` e `ref-lock`), teto de 3 × N
+  tentativas por execução no git e a lista de respostas esperadas do Sprout
+  por operação. O `docs/demo.md` documenta a barreira, os tipos de rejeição,
+  a largada, o registro e o JSON, e as versões validadas (git 2.56.0, node
+  26.12.0, também em `engines`)
+  ([#14](https://github.com/ArturCousseau/sprout/issues/14)).
+
 ### Alterado
 
 - Regras de processo no repositório: seção "Fluxo de trabalho" no CLAUDE.md,
