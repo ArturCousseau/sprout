@@ -8,7 +8,8 @@
 
 ## Como testar
 
-<!-- Comandos ou passos para conferir a mudança. -->
+<!-- Comandos ou passos para conferir a mudança. Mostre o código de saída de
+cada comando terminando-o com `; echo "exit $?"`. -->
 
 Closes #
 
@@ -21,3 +22,6 @@ Closes #
 - [ ] Nenhum princípio de arquitetura do CLAUDE.md foi violado.
 - [ ] Todas as threads de revisão estão resolvidas.
 - [ ] Decisão de arquitetura relevante tem ADR em `docs/adr/`.
+- [ ] Última issue da milestone? CHANGELOG movido para a seção da versão e
+      `version` do `package.json` atualizado (ver
+      [Release](https://github.com/ArturCousseau/sprout/blob/main/CONTRIBUTING.md#release)).
