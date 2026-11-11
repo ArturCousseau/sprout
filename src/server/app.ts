@@ -84,6 +84,7 @@ import { STATUS_CODES } from "node:http";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import type { Change } from "../core/changeset.js";
 import { InvalidPathError, normalizePath } from "../core/path.js";
+import { treeEntries } from "../core/tree.js";
 import { getBlob, HASH_FORMAT, hasBlob, putBlob } from "./blob-store.js";
 import {
   createChangeset,
@@ -93,6 +94,7 @@ import {
   type Db,
   type NewChangeset,
 } from "./db.js";
+import { createTreeReader } from "./tree.js";
 
 export interface AppOptions {
   blobDir: string;
@@ -250,6 +252,10 @@ export function buildApp({
   bodyLimit = DEFAULT_BODY_LIMIT,
 }: AppOptions): FastifyInstance {
   const app = Fastify({ bodyLimit });
+  // One cache per app, so one per server process (ADR 0005). Only the
+  // GET /changesets/:id/tree handler uses it: trees are computed on demand,
+  // never when a changeset is created.
+  const readTree = createTreeReader((id) => readChangeset(db, id));
 
   app.addHook("onReady", async () => {
     await mkdir(blobDir, { recursive: true });
@@ -314,6 +320,23 @@ export function buildApp({
     }
     return changeset;
   });
+
+  app.get<{ Params: { id: string } }>(
+    "/changesets/:id/tree",
+    (request, reply) => {
+      const { id } = request.params;
+      const numericId = parseChangesetId(id);
+      if (numericId === undefined) {
+        return sendError(reply, 400, `invalid changeset id: ${id}`);
+      }
+      const tree = readTree(numericId);
+      if (!tree) {
+        return sendError(reply, 404, `changeset not found: ${id}`);
+      }
+      // treeEntries, never the Map itself: JSON.stringify turns a Map into {}.
+      return { id: numericId, entries: treeEntries(tree) };
+    },
+  );
 
   app.post<{ Body: unknown }>("/changesets", async (request, reply) => {
     // The octet-stream parser registered above for PUT /blobs applies to every
