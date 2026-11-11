@@ -4,7 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { classifyPush, gitEnv, localGitConfig } from "./git.js";
+import {
+  checkGitAttempts,
+  classifyPush,
+  gitEnv,
+  localGitConfig,
+  maxGitAttempts,
+} from "./git.js";
 import { HarnessError } from "./harness-error.js";
 
 const run = promisify(execFile);
@@ -137,6 +143,47 @@ describe("git config isolation (integration, reproduces E4)", () => {
     expect(without.filter((s) => s === "global").length).toBeGreaterThan(0);
     expect(withGitEnv.filter((s) => s === "system")).toEqual([]);
     expect(withGitEnv.filter((s) => s === "global")).toEqual([]);
+  });
+});
+
+describe("git attempt ceiling (D9, per run)", () => {
+  it.each([
+    [2, 6],
+    [10, 30],
+  ])("N = %i → ceiling %i", (n, max) => {
+    expect(maxGitAttempts(n)).toBe(max);
+  });
+
+  it.each([2, 10])("N = %i: total 3N passes", (n) => {
+    expect(() => checkGitAttempts(3 * n, n)).not.toThrow();
+  });
+
+  it.each([2, 10])("N = %i: total 3N + 1 → HarnessError", (n) => {
+    expect(() => checkGitAttempts(3 * n + 1, n)).toThrow(HarnessError);
+    expect(() => checkGitAttempts(3 * n + 1, n)).toThrow(
+      `${3 * n + 1} attempts in the run, above the ceiling of ${3 * n}`,
+    );
+  });
+
+  it.each([0, -1, 1.5])("maxGitAttempts: n = %d → RangeError", (n) => {
+    expect(() => maxGitAttempts(n)).toThrow(RangeError);
+    expect(() => maxGitAttempts(n)).toThrow(
+      `n must be a positive integer, got ${n}`,
+    );
+  });
+
+  it.each([0, -1, 1.5])("checkGitAttempts: n = %d → RangeError", (n) => {
+    expect(() => checkGitAttempts(0, n)).toThrow(RangeError);
+    expect(() => checkGitAttempts(0, n)).toThrow(
+      `n must be a positive integer, got ${n}`,
+    );
+  });
+
+  it.each([-1, 2.5])("checkGitAttempts: total = %d → RangeError", (total) => {
+    expect(() => checkGitAttempts(total, 2)).toThrow(RangeError);
+    expect(() => checkGitAttempts(total, 2)).toThrow(
+      `totalAttempts must be a non-negative integer, got ${total}`,
+    );
   });
 });
 

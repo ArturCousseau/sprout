@@ -29,6 +29,33 @@ export function localGitConfig(agent: number): [key: string, value: string][] {
   ];
 }
 
+/** D9 ceiling, per run: the pushes of all `n` agents add up to at most 3n. */
+export function maxGitAttempts(n: number): number {
+  if (!Number.isInteger(n) || n < 1) {
+    throw new RangeError(`n must be a positive integer, got ${n}`);
+  }
+  return 3 * n;
+}
+
+/**
+ * Called by the git agents before each new push, with the run's total so far
+ * (counting that push). Above the ceiling the run stops with a HarnessError:
+ * by D9 it is a harness failure, not a metric.
+ */
+export function checkGitAttempts(totalAttempts: number, n: number): void {
+  const max = maxGitAttempts(n); // also rejects an invalid n
+  if (!Number.isInteger(totalAttempts) || totalAttempts < 0) {
+    throw new RangeError(
+      `totalAttempts must be a non-negative integer, got ${totalAttempts}`,
+    );
+  }
+  if (totalAttempts > max) {
+    throw new HarnessError(
+      `git: ${totalAttempts} attempts in the run, above the ceiling of ${max} (3 × ${n} agents, D9)`,
+    );
+  }
+}
+
 export type PushResult = "accepted" | RejectionType;
 
 // Summary column of a rejected push → rejection type. A Map, not an object:
