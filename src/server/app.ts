@@ -32,6 +32,15 @@
  *   414  :id longer than Fastify's maxParamLength (100 chars). Fastify answers
  *        this itself, before the handler runs.
  *
+ * GET /changesets/:id/tree
+ *   200  `{ id, entries: [{ path, blobHash }] }`: the parent's tree with the
+ *        changeset's changes applied, entries sorted by path, removed files
+ *        left out. Computed on demand and cached (ADR 0005).
+ *   400  same as GET /changesets/:id
+ *   404  no changeset with this id
+ *   414  same as GET /changesets/:id: Fastify's router answers it, with
+ *        `error: "Bad Request"` and `code: "FST_ERR_MAX_PARAM_LENGTH"`.
+ *
  * POST /changesets — body is JSON `{ parent, author, message, changes }`,
  * with `changes: [{ path, blobHash }]` (`blobHash: null` = file removed).
  *   201  changeset created and main moved to it; body is the core

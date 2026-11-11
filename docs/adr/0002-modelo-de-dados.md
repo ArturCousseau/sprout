@@ -32,6 +32,9 @@ rejeitar; essa política é detalhada no ADR 0003 (#12).
    Rejeitada porque o reparent teria de reescrever a árvore, e detectar
    conflito exigiria comparar árvores. Com o diff, basta cruzar as listas de
    caminhos.
+   **Nota (#13):** o core passou a ter o tipo `Tree`, a árvore como derived
+   data, calculada sob demanda e nunca gravada (ADR 0005). O changeset
+   continua sem a árvore.
 4. **Blobs são identificados pelo SHA-256 do conteúdo original, em hex
    minúsculo (64 caracteres).** A compressão zlib fica no blob store (#9), fora
    do core. Alternativas consideradas: SHA-1 (como o git), hex maiúsculo ou

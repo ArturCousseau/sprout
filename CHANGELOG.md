@@ -40,6 +40,13 @@ para a issue e para o PR de onde veio. O processo de release está no
   ADR 0003, sobre commits sem lock e a política de reparent
   ([#12](https://github.com/ArturCousseau/sprout/issues/12),
   [#36](https://github.com/ArturCousseau/sprout/pull/36)).
+- `GET /changesets/:id/tree`: a árvore de arquivos de um changeset (a árvore
+  do pai com as mudanças aplicadas), calculada sob demanda, num laço, e
+  guardada num cache em memória que nunca é invalidado; a remoção de um
+  caminho ausente é ignorada. Inclui `applyChanges` e `treeEntries` no core e
+  o ADR 0005, sobre a árvore sob demanda
+  ([#13](https://github.com/ArturCousseau/sprout/issues/13),
+  [#PR](https://github.com/ArturCousseau/sprout/pull/PR)).
 
 ### Alterado
 
