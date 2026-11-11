@@ -110,6 +110,28 @@ Cole no comentário os critérios de aceite da issue do PR, como texto. O reviso
 não tem `gh`: o `gh` roda pelo `Bash`, que o workflow bloqueia. Por isso não
 peça para ele ler a issue; ele não consegue e gasta rodadas tentando.
 
+Copie este bloco no comentário e preencha:
+
+```text
+@claude revise este PR contra os critérios de aceite abaixo.
+
+Critérios de aceite da issue #N:
+
+<cole aqui a lista de critérios da issue>
+
+Diga o que você não conseguiu ver ou verificar.
+
+CLAUDE.md novo (só se este PR alterar o CLAUDE.md):
+
+<cole aqui o texto novo do CLAUDE.md>
+```
+
+O bloco existe por dois motivos. O revisor não lê a issue (ver acima), então
+os critérios precisam estar no próprio comentário. E, na #12, com o pedido
+feito na conversa do PR, o revisor leu o `CLAUDE.md` da `main`, não o da
+branch do PR. Por isso, sempre que o PR alterar o `CLAUDE.md`, cole o texto
+novo no pedido.
+
 Só dispara para quem tem write access no repositório (a action confere isso).
 A resposta aparece como `github-actions[bot]`.
 
