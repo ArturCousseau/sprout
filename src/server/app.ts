@@ -122,6 +122,19 @@ export const DEFAULT_BODY_LIMIT = 16 * 1024 * 1024;
 const CHANGESET_ID_FORMAT = /^[1-9][0-9]*$/;
 
 /**
+ * The `:id` of a changeset route as a number, or undefined when it is not a
+ * positive decimal integer without a leading zero, or is above
+ * Number.MAX_SAFE_INTEGER.
+ */
+function parseChangesetId(id: string): number | undefined {
+  const numericId = Number(id);
+  if (!CHANGESET_ID_FORMAT.test(id) || !Number.isSafeInteger(numericId)) {
+    return undefined;
+  }
+  return numericId;
+}
+
+/**
  * A valid body: the parent the client started from and the changeset to
  * create. The parent stays out of the changeset, because createChangeset
  * uses the head of main as the parent.
@@ -291,8 +304,8 @@ export function buildApp({
 
   app.get<{ Params: { id: string } }>("/changesets/:id", (request, reply) => {
     const { id } = request.params;
-    const numericId = Number(id);
-    if (!CHANGESET_ID_FORMAT.test(id) || !Number.isSafeInteger(numericId)) {
+    const numericId = parseChangesetId(id);
+    if (numericId === undefined) {
       return sendError(reply, 400, `invalid changeset id: ${id}`);
     }
     const changeset = readChangeset(db, numericId);
