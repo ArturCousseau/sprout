@@ -372,15 +372,13 @@ describe("criterion 8: result file", () => {
 
 describe("criterion 9: invariants", () => {
   // D8: invariants only, never how many rejections (that depends on the race).
-  // [scenario, accepted, conflicts], written by hand.
+  // [scenario, accepted, conflicts, attempt ceiling], written by hand.
   it.each([
-    ["A", 2, 0],
-    ["C", 1, 1],
+    ["A", 2, 0, 3],
+    ["C", 1, 1, 3],
   ] as const)(
     "scenario %s",
-    async (id, acceptedCount, conflictCount) => {
-      const n = SCENARIOS[id].agents;
-
+    async (id, acceptedCount, conflictCount, ceiling) => {
       const result = await runScenario(id);
 
       const accepted = result.agents.filter((a) => a.outcome === "accepted");
@@ -400,7 +398,7 @@ describe("criterion 9: invariants", () => {
         expect(a.endMs).toBeGreaterThan(0);
         total += a.attempts;
       }
-      expect(total).toBeLessThanOrEqual(3 * n);
+      expect(total).toBeLessThanOrEqual(ceiling);
     },
     GIT_TIMEOUT,
   );

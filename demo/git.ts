@@ -37,12 +37,18 @@ export function localGitConfig(agent: number): [key: string, value: string][] {
   return identityGitConfig(`agente-${agent}`);
 }
 
-/** D9 ceiling, per run: the pushes of all `n` agents add up to at most 3n. */
+/**
+ * D9 ceiling, per run: the pushes of all `n` agents add up to at most
+ * n(n+1)/2 (comment on #15). Each counted rejection (fetch-first, ref-lock)
+ * means another agent was accepted after the agent's current base, and the
+ * next pull --rebase brings that acceptance in. So the k-th accepted agent
+ * pushes at most k times, and 1 + 2 + … + n = n(n+1)/2.
+ */
 export function maxGitAttempts(n: number): number {
   if (!Number.isInteger(n) || n < 1) {
     throw new RangeError(`n must be a positive integer, got ${n}`);
   }
-  return 3 * n;
+  return (n * (n + 1)) / 2;
 }
 
 /**
@@ -59,7 +65,7 @@ export function checkGitAttempts(totalAttempts: number, n: number): void {
   }
   if (totalAttempts > max) {
     throw new HarnessError(
-      `git: ${totalAttempts} attempts in the run, above the ceiling of ${max} (3 × ${n} agents, D9)`,
+      `git: ${totalAttempts} attempts in the run, above the ceiling of ${max} (N(N+1)/2 with N = ${n}, D9)`,
     );
   }
 }

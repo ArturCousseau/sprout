@@ -161,21 +161,40 @@ describe("git config isolation (integration, reproduces E4)", () => {
 
 describe("git attempt ceiling (D9, per run)", () => {
   it.each([
-    [2, 6],
-    [10, 30],
+    [1, 1],
+    [2, 3],
+    [10, 55],
   ])("N = %i → ceiling %i", (n, max) => {
     expect(maxGitAttempts(n)).toBe(max);
   });
 
-  it.each([2, 10])("N = %i: total 3N passes", (n) => {
-    expect(() => checkGitAttempts(3 * n, n)).not.toThrow();
+  it.each([
+    [1, 1],
+    [2, 3],
+    [10, 55],
+  ])("N = %i: total %i passes", (n, total) => {
+    expect(() => checkGitAttempts(total, n)).not.toThrow();
   });
 
-  it.each([2, 10])("N = %i: total 3N + 1 → HarnessError", (n) => {
-    expect(() => checkGitAttempts(3 * n + 1, n)).toThrow(HarnessError);
-    expect(() => checkGitAttempts(3 * n + 1, n)).toThrow(
-      `${3 * n + 1} attempts in the run, above the ceiling of ${3 * n}`,
-    );
+  it.each([
+    [
+      1,
+      2,
+      "git: 2 attempts in the run, above the ceiling of 1 (N(N+1)/2 with N = 1, D9)",
+    ],
+    [
+      2,
+      4,
+      "git: 4 attempts in the run, above the ceiling of 3 (N(N+1)/2 with N = 2, D9)",
+    ],
+    [
+      10,
+      56,
+      "git: 56 attempts in the run, above the ceiling of 55 (N(N+1)/2 with N = 10, D9)",
+    ],
+  ])("N = %i: total %i → HarnessError", (n, total, message) => {
+    expect(() => checkGitAttempts(total, n)).toThrow(HarnessError);
+    expect(() => checkGitAttempts(total, n)).toThrow(message);
   });
 
   it.each([0, -1, 1.5])("maxGitAttempts: n = %d → RangeError", (n) => {
