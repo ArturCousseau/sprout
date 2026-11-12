@@ -105,6 +105,20 @@ describe("writeResult / readResult", () => {
     );
   });
 
+  it("other read error → error with the path and the cause", async () => {
+    // A directory where the file should be: readFile fails with EISDIR.
+    const path = resultPath(dir, "git", "A");
+    await mkdir(path, { recursive: true });
+
+    const error = await readResult(dir, "git", "A").catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe(`cannot read result file ${path}`);
+    expect(((error as Error).cause as NodeJS.ErrnoException).code).toBe(
+      "EISDIR",
+    );
+  });
+
   it("broken JSON → invalid JSON error with the path", async () => {
     const path = await plantGitA('{"system": "git", ');
 

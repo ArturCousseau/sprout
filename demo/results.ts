@@ -53,7 +53,7 @@ export async function readResult(
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       throw new Error(`result file not found: ${path}`, { cause: error });
     }
-    throw error;
+    throw new Error(`cannot read result file ${path}`, { cause: error });
   }
   let data: unknown;
   try {
