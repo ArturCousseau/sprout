@@ -375,6 +375,7 @@ describe("criterion 9: invariants", () => {
   // [scenario, accepted, conflicts, attempt ceiling], written by hand.
   it.each([
     ["A", 2, 0, 3],
+    ["B", 10, 0, 55],
     ["C", 1, 1, 3],
   ] as const)(
     "scenario %s",
