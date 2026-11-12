@@ -153,9 +153,12 @@ do harness, não métrica. Quando um agente falha assim, os outros não são
 interrompidos: o harness espera todos terminarem (`Promise.allSettled`), para
 não deixar processos `git` ainda escrevendo em `demo/tmp`. Depois disso, **não
 grava o JSON**, escreve no stderr a mensagem de cada agente que falhou e sai com
-**código 1**. Quando o erro vem de um comando git, a mensagem leva o stderr do
-git, o único lugar onde ele aparece; no terminal, a execução normal mostra só as
-linhas de evento e o resumo.
+**código 1**. Quando o git terminou com saída inesperada, a mensagem leva o
+stderr do git, o único lugar onde ele aparece; no terminal, a execução normal
+mostra só as linhas de evento e o resumo. Se o git nem chegou a rodar até o fim
+(não foi possível iniciar o processo, ou ele foi morto por um sinal), não há
+stderr para mostrar: a mensagem traz o comando e o motivo (`cannot start git`
+ou `killed by <sinal>`).
 
 ### O teto de tentativas
 
