@@ -174,6 +174,15 @@ máximo 1 + 2 + … + N = N(N+1)/2. O teto era 3 × N, mas a primeira execução
 do cenário B passou de 30 tentativas sem nada de errado, e o teto mudou
 (comentário na #15).
 
+A primeira frase do argumento é uma **premissa, não verificada no código do
+git**: nada no harness a garante. O `classifyPush` só conta os dois resumos da
+tabela acima, e qualquer outra saída do push é erro do harness; a premissa é que
+esses dois só aparecem depois de um push aceito de outro agente. Ela é
+sustentada pela E1 da #14 (225 de 225 rejeições por `ref-lock`, sempre com 1
+aceito por onda) e pela coleta da D9 na #15 (20 execuções do cenário B, nenhuma
+acima de 55). Se ela falhar, o teto dispara e a execução para com erro do
+harness, em vez de contar errado.
+
 **As ondas do cenário B.** No B, esse pior caso aconteceu em todas as execuções
 observadas. A cada onda, todos os agentes que ainda faltam empurram juntos e só
 um é aceito: o k-ésimo aceito faz k tentativas, e a execução chega a
