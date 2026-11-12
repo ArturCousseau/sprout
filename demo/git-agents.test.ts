@@ -5,9 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { gitOk, prepareGitRun, runGit } from "./git-agents.js";
+import { gitOk, prepareGitRun, runGit, runGitScenario } from "./git-agents.js";
 import { HarnessError } from "./harness-error.js";
-import { SCENARIOS } from "./scenarios.js";
+import { readResult, type RunResult } from "./results.js";
+import { SCENARIOS, type ScenarioId } from "./scenarios.js";
 
 const run = promisify(execFile);
 
@@ -204,4 +205,132 @@ describe("criterion 3: isolated git config", () => {
     expect(viaRunGit).not.toContain("system");
     expect(viaRunGit).not.toContain("global");
   });
+});
+
+/** Runs a scenario in `base` with the event lines silenced. */
+function runScenario(id: ScenarioId): Promise<RunResult> {
+  return runGitScenario({
+    scenario: SCENARIOS[id],
+    baseDir: base,
+    resultsDir: join(base, "resultados"),
+    log: () => {},
+  });
+}
+
+describe("criterion 4: agent cycle", () => {
+  it(
+    "scenario A: main is linear and has each agent's file, content and author",
+    async () => {
+      const central = join(base, "central.git");
+
+      await runScenario("A");
+
+      expect(await git(["-C", central, "rev-list", "--count", "main"])).toBe(
+        "3",
+      );
+      expect(await git(["-C", central, "rev-list", "--merges", "main"])).toBe(
+        "",
+      );
+      expect(await git(["-C", central, "ls-tree", "--name-only", "main"])).toBe(
+        "README.md\nagente-1.txt\nagente-2.txt",
+      );
+      for (const n of [1, 2]) {
+        const file = `agente-${n}.txt`;
+        expect(await git(["-C", central, "show", `main:${file}`])).toBe(
+          `agente ${n}`,
+        );
+        expect(
+          await git([
+            "-C",
+            central,
+            "log",
+            "--format=%an|%s",
+            "main",
+            "--",
+            file,
+          ]),
+        ).toBe(`agente-${n}|agente ${n}`);
+      }
+    },
+    GIT_TIMEOUT,
+  );
+});
+
+describe("criterion 6: real conflict", () => {
+  it(
+    "scenario C: loser aborts the rebase, ends in conflict with a clean clone",
+    async () => {
+      const central = join(base, "central.git");
+
+      const result = await runScenario("C");
+
+      const winner = result.agents.find((a) => a.outcome === "accepted");
+      const loser = result.agents.find((a) => a.outcome === "conflict");
+      expect(winner).toBeDefined();
+      expect(loser).toBeDefined();
+      const clone = join(base, `git-agente-${loser?.agent}`);
+      expect(existsSync(join(clone, ".git", "rebase-merge"))).toBe(false);
+      expect(await git(["-C", clone, "status", "--porcelain"])).toBe("");
+      expect(await git(["-C", clone, "log", "-1", "--format=%an"])).toBe(
+        `agente-${loser?.agent}`,
+      );
+      expect(await git(["-C", central, "show", "main:conflito.txt"])).toBe(
+        `agente ${winner?.agent}`,
+      );
+      expect(await git(["-C", central, "rev-list", "--count", "main"])).toBe(
+        "2",
+      );
+    },
+    GIT_TIMEOUT,
+  );
+});
+
+describe("criterion 8: result file", () => {
+  it(
+    "writes git-A.json and readResult reads it back",
+    async () => {
+      const result = await runScenario("A");
+
+      expect(await readResult(join(base, "resultados"), "git", "A")).toEqual(
+        result,
+      );
+    },
+    GIT_TIMEOUT,
+  );
+});
+
+describe("criterion 9: invariants", () => {
+  // D8: invariants only, never how many rejections (that depends on the race).
+  // [scenario, accepted, conflicts], written by hand.
+  it.each([
+    ["A", 2, 0],
+    ["C", 1, 1],
+  ] as const)(
+    "scenario %s",
+    async (id, acceptedCount, conflictCount) => {
+      const n = SCENARIOS[id].agents;
+
+      const result = await runScenario(id);
+
+      const accepted = result.agents.filter((a) => a.outcome === "accepted");
+      const conflicts = result.agents.filter((a) => a.outcome === "conflict");
+      expect(accepted).toHaveLength(acceptedCount);
+      expect(conflicts).toHaveLength(conflictCount);
+      let total = 0;
+      for (const a of result.agents) {
+        const rejected = Object.values(a.rejections).reduce(
+          (sum, count) => sum + (count ?? 0),
+          0,
+        );
+        expect(a.attempts).toBe(
+          a.outcome === "accepted" ? rejected + 1 : rejected,
+        );
+        expect(a.reparented).toBeNull();
+        expect(a.endMs).toBeGreaterThan(0);
+        total += a.attempts;
+      }
+      expect(total).toBeLessThanOrEqual(3 * n);
+    },
+    GIT_TIMEOUT,
+  );
 });
