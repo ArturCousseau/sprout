@@ -16,13 +16,23 @@ para a issue e para o PR de onde veio. O processo de release está no
   cenários A, B e C com `--cenario`, barreira de largada em memória, registro
   por agente e resumo do placar, resultados gravados e lidos em JSON, config
   do git isolada para os agentes, classificação das rejeições do
-  `git push --porcelain` (`fetch-first` e `ref-lock`), teto de 3 × N
+  `git push --porcelain` (`fetch-first` e `ref-lock`), teto de N(N+1)/2
   tentativas por execução no git e a lista de respostas esperadas do Sprout
   por operação. O `docs/demo.md` documenta a barreira, os tipos de rejeição,
   a largada, o registro e o JSON, e as versões validadas (git 2.56.0, node
   26.12.0, também em `engines`)
   ([#14](https://github.com/ArturCousseau/sprout/issues/14),
   [#41](https://github.com/ArturCousseau/sprout/pull/41)).
+- Agentes do git da demo: `pnpm demo:git --cenario A|B|C` recria do zero o
+  repositório central bare e um clone por agente, faz os commits antes da
+  barreira e roda o ciclo push → `pull --rebase` → nova tentativa, contando
+  as rejeições por tipo e o conflito real (`rebase --abort`). Erro do harness
+  espera todos os agentes, não grava o JSON e sai com 1. O teto de
+  tentativas passou de 3 × N para N(N+1)/2, o pior caso legítimo, depois de a
+  primeira execução real do cenário B passar de 30. O `docs/demo.md`
+  documenta a preparação, o `pull --rebase`, o erro do harness, o teto e o
+  comando ([#15](https://github.com/ArturCousseau/sprout/issues/15),
+  [#42](https://github.com/ArturCousseau/sprout/pull/42)).
 
 ### Alterado
 

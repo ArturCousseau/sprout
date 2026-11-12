@@ -6,8 +6,10 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   checkGitAttempts,
+  classifyPull,
   classifyPush,
   gitEnv,
+  identityGitConfig,
   localGitConfig,
   maxGitAttempts,
 } from "./git.js";
@@ -44,6 +46,17 @@ describe("gitEnv", () => {
     gitEnv(base);
 
     expect(base).toEqual({ PATH: "/usr/bin" });
+  });
+});
+
+describe("identityGitConfig", () => {
+  it("lists name, email, gpgsign and gc.auto for preparacao", () => {
+    expect(identityGitConfig("preparacao")).toEqual([
+      ["user.name", "preparacao"],
+      ["user.email", "preparacao@example.invalid"],
+      ["commit.gpgsign", "false"],
+      ["gc.auto", "0"],
+    ]);
   });
 });
 
@@ -148,21 +161,40 @@ describe("git config isolation (integration, reproduces E4)", () => {
 
 describe("git attempt ceiling (D9, per run)", () => {
   it.each([
-    [2, 6],
-    [10, 30],
+    [1, 1],
+    [2, 3],
+    [10, 55],
   ])("N = %i → ceiling %i", (n, max) => {
     expect(maxGitAttempts(n)).toBe(max);
   });
 
-  it.each([2, 10])("N = %i: total 3N passes", (n) => {
-    expect(() => checkGitAttempts(3 * n, n)).not.toThrow();
+  it.each([
+    [1, 1],
+    [2, 3],
+    [10, 55],
+  ])("N = %i: total %i passes", (n, total) => {
+    expect(() => checkGitAttempts(total, n)).not.toThrow();
   });
 
-  it.each([2, 10])("N = %i: total 3N + 1 → HarnessError", (n) => {
-    expect(() => checkGitAttempts(3 * n + 1, n)).toThrow(HarnessError);
-    expect(() => checkGitAttempts(3 * n + 1, n)).toThrow(
-      `${3 * n + 1} attempts in the run, above the ceiling of ${3 * n}`,
-    );
+  it.each([
+    [
+      1,
+      2,
+      "git: 2 attempts in the run, above the ceiling of 1 (N(N+1)/2 with N = 1, D9)",
+    ],
+    [
+      2,
+      4,
+      "git: 4 attempts in the run, above the ceiling of 3 (N(N+1)/2 with N = 2, D9)",
+    ],
+    [
+      10,
+      56,
+      "git: 56 attempts in the run, above the ceiling of 55 (N(N+1)/2 with N = 10, D9)",
+    ],
+  ])("N = %i: total %i → HarnessError", (n, total, message) => {
+    expect(() => checkGitAttempts(total, n)).toThrow(HarnessError);
+    expect(() => checkGitAttempts(total, n)).toThrow(message);
   });
 
   it.each([0, -1, 1.5])("maxGitAttempts: n = %d → RangeError", (n) => {
@@ -295,5 +327,26 @@ describe("classifyPush", () => {
   ])("synthetic: %s → HarnessError", (_label, stdout, code, message) => {
     expect(() => classifyPush(stdout, code)).toThrow(HarnessError);
     expect(() => classifyPush(stdout, code)).toThrow(message);
+  });
+});
+
+// D5: the exit code alone does not separate the cases (E2), so the agent also
+// passes whether .git/rebase-merge exists after `git pull --rebase`.
+describe("criterion 7: classifyPull", () => {
+  it.each([
+    [0, false, "rebased"],
+    [1, true, "conflict"],
+  ] as const)("code %i, rebase-merge %s → %s", (code, inProgress, result) => {
+    expect(classifyPull(code, inProgress)).toBe(result);
+  });
+
+  it.each([
+    [0, true, "exit code 0 with rebase-merge present"],
+    [1, false, "exit code 1 with rebase-merge absent"],
+    [128, false, "exit code 128 with rebase-merge absent"],
+    [128, true, "exit code 128 with rebase-merge present"],
+  ])("code %i, rebase-merge %s → HarnessError", (code, inProgress, message) => {
+    expect(() => classifyPull(code, inProgress)).toThrow(HarnessError);
+    expect(() => classifyPull(code, inProgress)).toThrow(message);
   });
 });

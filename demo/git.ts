@@ -16,25 +16,39 @@ export function gitEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 /**
- * Config written into each agent's clone (`git config <key> <value>`), so
- * commits work without any global config (D7). `gc.auto=0` keeps git from
- * starting a garbage collection in the middle of a run.
+ * Config written into a clone (`git config <key> <value>`) so commits work
+ * without any global config (D7), with `name` as the commit author.
+ * `gc.auto=0` keeps git from starting a garbage collection in the middle of a
+ * run. Used as is by the preparation clone, which is not an agent.
  */
-export function localGitConfig(agent: number): [key: string, value: string][] {
+export function identityGitConfig(
+  name: string,
+): [key: string, value: string][] {
   return [
-    ["user.name", `agente-${agent}`],
-    ["user.email", `agente-${agent}@example.invalid`],
+    ["user.name", name],
+    ["user.email", `${name}@example.invalid`],
     ["commit.gpgsign", "false"],
     ["gc.auto", "0"],
   ];
 }
 
-/** D9 ceiling, per run: the pushes of all `n` agents add up to at most 3n. */
+/** Config written into each agent's clone: author `agente-N`. */
+export function localGitConfig(agent: number): [key: string, value: string][] {
+  return identityGitConfig(`agente-${agent}`);
+}
+
+/**
+ * D9 ceiling, per run: the pushes of all `n` agents add up to at most
+ * n(n+1)/2 (comment on #15). Each counted rejection (fetch-first, ref-lock)
+ * means another agent was accepted after the agent's current base, and the
+ * next pull --rebase brings that acceptance in. So the k-th accepted agent
+ * pushes at most k times, and 1 + 2 + … + n = n(n+1)/2.
+ */
 export function maxGitAttempts(n: number): number {
   if (!Number.isInteger(n) || n < 1) {
     throw new RangeError(`n must be a positive integer, got ${n}`);
   }
-  return 3 * n;
+  return (n * (n + 1)) / 2;
 }
 
 /**
@@ -51,7 +65,7 @@ export function checkGitAttempts(totalAttempts: number, n: number): void {
   }
   if (totalAttempts > max) {
     throw new HarnessError(
-      `git: ${totalAttempts} attempts in the run, above the ceiling of ${max} (3 × ${n} agents, D9)`,
+      `git: ${totalAttempts} attempts in the run, above the ceiling of ${max} (N(N+1)/2 with N = ${n}, D9)`,
     );
   }
 }
@@ -117,5 +131,29 @@ export function classifyPush(stdout: string, exitCode: number): PushResult {
   }
   throw new HarnessError(
     `push: unknown flag ${JSON.stringify(flag)}: ${JSON.stringify(line)}`,
+  );
+}
+
+export type PullResult = "rebased" | "conflict";
+
+/**
+ * Classifies one `git pull --rebase` from its exit code and whether
+ * `.git/rebase-merge` exists afterwards (D5): the code alone does not separate
+ * the cases (Phase 1 of #14, E2). Code 0 with no rebase in progress → back to
+ * the push; code 1 with a rebase in progress → real conflict. Any other
+ * combination is a HarnessError, never a guess.
+ */
+export function classifyPull(
+  exitCode: number,
+  rebaseInProgress: boolean,
+): PullResult {
+  if (exitCode === 0 && !rebaseInProgress) {
+    return "rebased";
+  }
+  if (exitCode === 1 && rebaseInProgress) {
+    return "conflict";
+  }
+  throw new HarnessError(
+    `pull --rebase: exit code ${exitCode} with rebase-merge ${rebaseInProgress ? "present" : "absent"}`,
   );
 }

@@ -5,8 +5,9 @@ import { type AgentResult, summarize } from "./metrics.js";
 
 // git, scenario B: 10 agents, all accepted. Agent N needed N - 1 rejections
 // (45 in all), split between "fetch-first" and "ref-lock".
-// The 55 attempts exceed the D9 ceiling (3 × N = 30 for N = 10). That ceiling
-// is enforced in step 8 (checkGitAttempts), not by summarize.
+// The 55 attempts are exactly the D9 ceiling (N(N+1)/2 = 55 for N = 10): the
+// worst case, one acceptance per round. That ceiling is enforced by
+// checkGitAttempts, not by summarize.
 const gitB: AgentResult[] = Array.from({ length: 10 }, (_, i) => {
   const lost = i; // agent 1 lost 0 rounds, agent 10 lost 9
   const fetchFirst = Math.ceil(lost / 2);
