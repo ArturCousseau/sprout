@@ -23,6 +23,9 @@ no servidor, compare-and-swap e troca de pai) evita esse desperdício.
   mostra o mecanismo; o Scion real faz isso distribuído.
 - **Não reproduz o comportamento exato do Scion.** O artigo não detalha o que o
   Scion faz quando o compare-and-swap falha. A política de trocar o pai é nossa.
+- **Não usa agentes de IA.** Os agentes da demo são rotinas com roteiro fixo,
+  sem modelo de IA, que simulam o padrão de commits concorrentes de agentes
+  reais.
 
 ## 2. Os cenários
 
@@ -47,28 +50,53 @@ escala com dez.
 
 ### Preparação
 
-1. Cria um repositório central **bare** numa pasta local (`demo/tmp/central.git`),
-   com um commit inicial.
-2. Cada agente faz o seu próprio clone (`demo/tmp/git-agente-1`, `-2` etc.).
+Cada execução começa do zero, e uma execução anterior não muda o resultado:
+
+1. Apaga o que sobrou da execução anterior: `demo/tmp/central.git`, os clones
+   `demo/tmp/git-agente-*` e o JSON do cenário (§6).
+2. Cria o repositório central **bare** em `demo/tmp/central.git`
+   (`git init --bare -b main`), com `gc.auto=0`, para o git não começar uma
+   coleta de lixo no meio da execução.
+3. Um clone de preparação (`demo/tmp/git-preparacao`, que não é agente) faz o
+   commit inicial com um `README.md` de conteúdo fixo e autor `preparacao`,
+   envia para a `main` do central e é apagado.
+4. Cada agente ganha o seu próprio clone (`demo/tmp/git-agente-1`, `-2` etc.),
+   com a configuração local daquele agente (`localGitConfig` em `demo/git.ts`):
+   autor `agente-N`, commit sem assinatura e `gc.auto=0`.
+
+Todo processo `git` da demo roda com `gitEnv` (`demo/git.ts`), que esconde a
+configuração global e a do sistema. Por isso a identidade de cada agente fica na
+configuração do próprio clone.
 
 ### O ciclo de um agente
 
 ```
-1. escreve o seu arquivo (agente-N.txt, ou o mesmo arquivo no cenário C)
+1. escreve o seu arquivo (agente-N.txt, ou conflito.txt no cenário C)
+   com o conteúdo "agente N"
 2. git add + git commit
 3. ── ponto de sincronização: espera todos os agentes chegarem aqui ──
-4. git push
+4. git push --porcelain
 5. se o push for aceito: termina
 6. se for rejeitado:
-     conta uma rejeição
+     conta uma rejeição do tipo dela (fetch-first ou ref-lock)
      git pull --rebase
-     se o rebase tiver conflito: conta como conflito real, desiste e termina
+     se o rebase tiver conflito: git rebase --abort, conta como conflito
+       real e termina
      volta ao passo 4
 ```
 
 O **ponto de sincronização** (passo 3) é o que garante que todos os agentes
 partem da mesma `main`. Sem ele, os agentes terminariam em momentos diferentes e
 o resultado mudaria a cada execução.
+
+Os passos 1 e 2 não rodam em paralelo: o harness faz o commit de todos os
+agentes, um depois do outro, antes de criar a barreira. O resultado é o mesmo de
+commits simultâneos, porque nenhum agente envia nada antes da barreira e todos
+os commits ficam em cima do commit inicial. O motivo é a falha: se um commit
+falhasse com outros agentes já parados na barreira, eles esperariam para sempre
+por uma chegada que nunca vem, e a execução não terminaria. Com os commits antes
+da barreira, uma falha nessa fase para a execução antes de qualquer agente
+esperar.
 
 ### O ponto de sincronização
 
@@ -100,6 +128,57 @@ git 2.56.0 e estão em `demo/fixtures/porcelain/`:
 O push aceito sai com código 0 e flag ` `, `+` ou `*`. Qualquer outra saída
 (resumo desconhecido, nenhuma ou mais de uma linha para `refs/heads/main`,
 código que não bate com a flag) é erro do harness, não métrica.
+
+### O `pull --rebase` e o conflito real
+
+Depois de uma rejeição, o harness separa os casos do `git pull --rebase` pelo
+código de saída e pela pasta `.git/rebase-merge`, que indica rebase em andamento
+(`classifyPull` em `demo/git.ts`). O código sozinho não basta:
+
+| Código                    | `.git/rebase-merge` | Resultado                                                             |
+| ------------------------- | ------------------- | --------------------------------------------------------------------- |
+| 0                         | ausente             | Rebase feito: o agente volta ao push                                  |
+| 1                         | presente            | Conflito real: `git rebase --abort` e `outcome: "conflict"`           |
+| qualquer outra combinação |                     | Erro do harness (por exemplo: 0 com a pasta presente, 1 sem ela, 128) |
+
+O `git rebase --abort` desfaz o rebase interrompido, e o clone do agente que
+desistiu fica com `git status` limpo. Na demo, só o cenário C chega a esse caso.
+
+### Erro do harness
+
+Saída inesperada do git (push fora do que "Os dois tipos de rejeição" descreve,
+`pull --rebase` fora dos dois primeiros casos da tabela acima, comando de
+preparação ou de commit que falhou) e teto de tentativas ultrapassado são erros
+do harness, não métrica. Quando um agente falha assim, os outros não são
+interrompidos: o harness espera todos terminarem (`Promise.allSettled`), para
+não deixar processos `git` ainda escrevendo em `demo/tmp`. Depois disso, **não
+grava o JSON**, escreve no stderr a mensagem de cada agente que falhou e sai com
+**código 1**. Quando o erro vem de um comando git, a mensagem leva o stderr do
+git, o único lugar onde ele aparece; no terminal, a execução normal mostra só as
+linhas de evento e o resumo.
+
+### O teto de tentativas
+
+Antes de cada push, o harness soma 1 ao total de pushes da execução (todos os
+agentes juntos) e confere o teto de **N(N+1)/2** (`checkGitAttempts` em
+`demo/git.ts`): 3 nos cenários A e C, 55 no B. Passar dele é erro do harness.
+
+O teto vem do pior caso legítimo. Uma rejeição contada (`fetch-first` ou
+`ref-lock`) só acontece quando outro agente foi aceito depois da base atual do
+agente, e o `pull --rebase` seguinte traz esse aceite para a base. Então o
+agente aceito em k-ésimo lugar faz no máximo k pushes, e a execução faz no
+máximo 1 + 2 + … + N = N(N+1)/2. O teto era 3 × N, mas a primeira execução real
+do cenário B passou de 30 tentativas sem nada de errado, e o teto mudou
+(comentário na #15).
+
+**As ondas do cenário B.** No B, esse pior caso aconteceu em todas as execuções
+observadas. A cada onda, todos os agentes que ainda faltam empurram juntos e só
+um é aceito: o k-ésimo aceito faz k tentativas, e a execução chega a
+N(N+1)/2 = 55. As 20 execuções da coleta da #15 deram exatamente 55 tentativas
+cada. Como nenhum agente passa de k, um total de 55 só acontece quando cada um
+faz exatamente k. Mesmo assim, o teste do cenário B confere total ≤ 55, e
+não = 55: o teste só confere invariantes, e nada no git obriga cada onda a
+reunir todos os agentes restantes.
 
 ### A largada não sai junta
 
@@ -266,6 +345,10 @@ ausente, JSON inválido, campo desconhecido ou de tipo errado, tipo de rejeiçã
 fora da lista, número de agentes diferente do cenário, agente repetido ou
 faltando. Como o arquivo fica em `demo/tmp`, o `pnpm demo:reset` também o apaga.
 
+No git, o JSON do cenário é apagado no início de cada execução (§3,
+preparação). Uma execução que para com erro do harness não deixa arquivo
+nenhum, então o placar nunca lê o resultado de uma execução anterior.
+
 ### Verificação do estado final (🟡)
 
 Depois de cada cenário, o script confere que a `main` contém exatamente os
@@ -287,17 +370,28 @@ Validada com git 2.56.0 e node 26.12.0 no omarchy (Fase 1 da #14).
 
 ## 8. Comandos
 
+Definidos:
+
 ```
 pnpm demo:reset                    apaga demo/tmp; cada execução da demo recria o que precisa
-pnpm demo:git --cenario A --passo  cenário A no git, passo a passo
-pnpm demo:sprout --cenario A --passo
-pnpm demo:git --cenario B          cenário B no git, rápido
-pnpm demo:sprout --cenario B
-pnpm demo:placar --cenario B       mostra os dois lado a lado
-pnpm demo:medir                    roda tudo 5 vezes e atualiza docs/resultados.md
+pnpm demo:git --cenario A|B|C      um cenário no git, no modo rápido
 ```
 
-Os nomes são uma proposta; eles serão definidos na issue da demo.
+O `demo:git` grava `demo/tmp/resultados/git-<cenário>.json` e sai com:
+
+- **0:** a execução terminou e o JSON foi gravado;
+- **1:** erro do harness (§3): mensagem no stderr, sem JSON;
+- **2:** cenário ausente ou inválido: mensagem no stderr.
+
+Ainda são proposta, e cada nome será definido na issue indicada:
+
+```
+pnpm demo:git --cenario A --passo     cenário A no git, passo a passo (#17)
+pnpm demo:sprout --cenario A --passo  cenário A no Sprout, passo a passo (#16, #17)
+pnpm demo:sprout --cenario B          cenário B no Sprout, rápido (#16)
+pnpm demo:placar --cenario B          mostra os dois lado a lado (#18)
+pnpm demo:medir                       roda tudo 5 vezes e atualiza docs/resultados.md (#21)
+```
 
 ## 9. Roteiro de fala (cerca de 5 minutos)
 
