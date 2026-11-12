@@ -327,6 +327,33 @@ describe("criterion 5: attempt ceiling", () => {
   );
 });
 
+describe("non-HarnessError errors (decision 7)", () => {
+  it(
+    "a plain Error from an agent is rethrown as is, no JSON",
+    async () => {
+      const results = join(base, "resultados");
+
+      // Same setup as "ceiling 1", but the second check throws a plain Error,
+      // standing in for a bug: it must not be reported as a harness error.
+      const error: unknown = await runGitScenario({
+        scenario: SCENARIOS.A,
+        baseDir: base,
+        resultsDir: results,
+        log: () => {},
+        checkAttempts: (total) => {
+          if (total > 1) throw new Error("plain bug");
+        },
+      }).catch((reason: unknown) => reason);
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error).not.toBeInstanceOf(HarnessError);
+      expect((error as Error).message).toBe("plain bug");
+      expect(existsSync(join(results, "git-A.json"))).toBe(false);
+    },
+    GIT_TIMEOUT,
+  );
+});
+
 describe("criterion 6: real conflict", () => {
   it(
     "scenario C: loser aborts the rebase, ends in conflict with a clean clone",
