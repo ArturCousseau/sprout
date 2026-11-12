@@ -155,7 +155,7 @@ com `error: "Bad Request"` e `code: "FST_ERR_MAX_PARAM_LENGTH"`).
 
 ## 6. A demo
 
-Detalhada em `03-demo.md`. Em resumo:
+Detalhada em `demo.md`. Em resumo:
 
 - **Agentes do git:** repositório central local; cada agente clona, muda um
   arquivo, faz commit e push. Se o push for rejeitado, faz `pull --rebase` e

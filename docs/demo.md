@@ -70,9 +70,58 @@ O **ponto de sincronização** (passo 3) é o que garante que todos os agentes
 partem da mesma `main`. Sem ele, os agentes terminariam em momentos diferentes e
 o resultado mudaria a cada execução.
 
-No git, um push concorrente pode falhar de duas formas: rejeição por não ser
-_fast-forward_ (a `main` andou) ou falha ao travar a ref (outro push está
-atualizando a `main` naquele exato momento). As duas contam como rejeição.
+### O ponto de sincronização
+
+É uma barreira em memória (`demo/barrier.ts`): todos os agentes rodam no mesmo
+processo Node, e cada um chama `arrive()` e espera. Quando o N-ésimo chega, a
+barreira lê `performance.now()` uma vez e libera todos com esse mesmo instante,
+o **instante da liberação**. É dele que o tempo total é medido (§6). Uma chegada
+além de N é erro do harness.
+
+### Os dois tipos de rejeição
+
+No git, um push concorrente pode falhar de duas formas, e as duas contam como
+rejeição. O código de saída é 1 nas duas, então o harness separa os tipos pela
+linha de status do `git push --porcelain` (`classifyPush` em `demo/git.ts`):
+
+| Tipo no registro | Quando acontece                                                   | Resumo na linha de status                          |
+| ---------------- | ----------------------------------------------------------------- | -------------------------------------------------- |
+| `fetch-first`    | A `main` andou antes do push: não é _fast-forward_                | `[rejected] (fetch first)`                         |
+| `ref-lock`       | Dois pushes disputaram a ref ao mesmo tempo, e este perdeu o lock | `[remote rejected] (incorrect old value provided)` |
+
+As linhas reais, com os campos separados por TAB (flag, refs, resumo), vêm do
+git 2.56.0 e estão em `demo/fixtures/porcelain/`:
+
+```
+!	refs/heads/main:refs/heads/main	[rejected] (fetch first)
+!	refs/heads/main:refs/heads/main	[remote rejected] (incorrect old value provided)
+```
+
+O push aceito sai com código 0 e flag ` `, `+` ou `*`. Qualquer outra saída
+(resumo desconhecido, nenhuma ou mais de uma linha para `refs/heads/main`,
+código que não bate com a flag) é erro do harness, não métrica.
+
+### A largada não sai junta
+
+A barreira libera todos os agentes no mesmo instante, mas os pushes não começam
+juntos. O `spawn` do Node é síncrono: cada chamada cria o processo `git push`
+antes de devolver e custa cerca de 3,7 ms. Na Fase 1 da #14 (experimento E3, 10
+rodadas com 10 agentes), a primeira chamada saiu 0,02–0,07 ms depois da
+liberação, mas as 10 chamadas se espalharam por 27–57 ms (mediana 31,6 ms).
+Lançando os pushes de um script shell (E1), o espalhamento foi de 2,3 ms
+(mediana).
+
+- **A divisão das rejeições muda.** Na E3, cerca de metade foi `fetch-first` e
+  metade `ref-lock` (46 e 44 de 90); na E1, todas as 225 foram `ref-lock`. Os
+  primeiros pushes disputam o lock; os que saem depois de a `main` já ter mudado
+  recebem `fetch first`.
+- **A mensagem da demo não muda.** Cada onda de pushes ainda teve exatamente 1
+  aceito e o resto rejeitado.
+- **O tempo total do git inclui esses ~30 ms de lançamento**, que o Sprout não
+  tem: o agente do Sprout faz um pedido HTTP, sem criar processo. É pouco perto
+  do tempo total, mas é uma assimetria, e fica declarada aqui.
+
+Decidimos aceitar e documentar, em vez de mudar a forma de lançar os pushes.
 
 ## 4. Como os agentes do Sprout funcionam
 
@@ -161,6 +210,62 @@ _(números ilustrativos; os reais vêm da medição)_
 - **conflitos reais:** mudanças no mesmo arquivo, rejeitadas nos dois sistemas.
 - **tempo total:** do ponto de sincronização até o último agente terminar.
 
+### O registro de cada agente
+
+O placar sai só dos registros por agente (`AgentResult` em `demo/metrics.ts`):
+
+| Campo        | Valor                        | Significado                                                                                               |
+| ------------ | ---------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `agent`      | inteiro ≥ 1                  | Número do agente                                                                                          |
+| `outcome`    | `"accepted"` ou `"conflict"` | Aceito, ou conflito real (o agente desistiu)                                                              |
+| `attempts`   | inteiro ≥ 1                  | Pushes (git) ou pedidos `POST /changesets` (Sprout)                                                       |
+| `rejections` | objeto                       | Rejeições por tipo: chaves `fetch-first` e `ref-lock` (§3), valores inteiros ≥ 0. No Sprout é sempre `{}` |
+| `reparented` | booleano ou `null`           | Sprout: se o `201` veio com um `parent` diferente do enviado. Git: sempre `null`                          |
+| `endMs`      | número ≥ 0                   | Milissegundos do instante da liberação (§3) até o fim do agente                                           |
+
+Cada coluna do placar é calculada desses registros (`summarize`): **aceitos** e
+**conflitos reais** contam o `outcome`; **rejeições** somam todos os tipos de
+todos os agentes; **tentativas** somam `attempts`; **trocas de pai** contam os
+`reparented: true` (no git, onde todos são `null`, aparece `-`); **tempo total**
+é o maior `endMs`.
+
+### O arquivo de resultados
+
+Cada execução grava um JSON em `demo/tmp/resultados/<sistema>-<cenário>.json`
+(por exemplo, `git-B.json`), com o sistema, o cenário e um registro por agente.
+Exemplo ilustrativo do cenário A no git:
+
+```json
+{
+  "system": "git",
+  "scenario": "A",
+  "agents": [
+    {
+      "agent": 1,
+      "outcome": "accepted",
+      "attempts": 1,
+      "rejections": {},
+      "reparented": null,
+      "endMs": 41.2
+    },
+    {
+      "agent": 2,
+      "outcome": "accepted",
+      "attempts": 2,
+      "rejections": { "ref-lock": 1 },
+      "reparented": null,
+      "endMs": 97.8
+    }
+  ]
+}
+```
+
+A leitura (`readResult` em `demo/results.ts`) confere a forma campo a campo e
+falha com uma mensagem que nomeia o arquivo e, quando é o caso, o campo: arquivo
+ausente, JSON inválido, campo desconhecido ou de tipo errado, tipo de rejeição
+fora da lista, número de agentes diferente do cenário, agente repetido ou
+faltando. Como o arquivo fica em `demo/tmp`, o `pnpm demo:reset` também o apaga.
+
 ### Verificação do estado final (🟡)
 
 Depois de cada cenário, o script confere que a `main` contém exatamente os
@@ -178,10 +283,12 @@ junto com:
 - a observação de que o repositório central do git roda localmente, sem rede, o
   que favorece o git em tempo.
 
+Validada com git 2.56.0 e node 26.12.0 no omarchy (Fase 1 da #14).
+
 ## 8. Comandos
 
 ```
-pnpm demo:reset                    apaga demo/tmp e recria tudo do zero
+pnpm demo:reset                    apaga demo/tmp; cada execução da demo recria o que precisa
 pnpm demo:git --cenario A --passo  cenário A no git, passo a passo
 pnpm demo:sprout --cenario A --passo
 pnpm demo:git --cenario B          cenário B no git, rápido
