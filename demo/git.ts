@@ -16,17 +16,25 @@ export function gitEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 /**
- * Config written into each agent's clone (`git config <key> <value>`), so
- * commits work without any global config (D7). `gc.auto=0` keeps git from
- * starting a garbage collection in the middle of a run.
+ * Config written into a clone (`git config <key> <value>`) so commits work
+ * without any global config (D7), with `name` as the commit author.
+ * `gc.auto=0` keeps git from starting a garbage collection in the middle of a
+ * run. Used as is by the preparation clone, which is not an agent.
  */
-export function localGitConfig(agent: number): [key: string, value: string][] {
+export function identityGitConfig(
+  name: string,
+): [key: string, value: string][] {
   return [
-    ["user.name", `agente-${agent}`],
-    ["user.email", `agente-${agent}@example.invalid`],
+    ["user.name", name],
+    ["user.email", `${name}@example.invalid`],
     ["commit.gpgsign", "false"],
     ["gc.auto", "0"],
   ];
+}
+
+/** Config written into each agent's clone: author `agente-N`. */
+export function localGitConfig(agent: number): [key: string, value: string][] {
+  return identityGitConfig(`agente-${agent}`);
 }
 
 /** D9 ceiling, per run: the pushes of all `n` agents add up to at most 3n. */

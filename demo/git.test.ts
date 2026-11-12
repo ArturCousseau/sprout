@@ -8,6 +8,7 @@ import {
   checkGitAttempts,
   classifyPush,
   gitEnv,
+  identityGitConfig,
   localGitConfig,
   maxGitAttempts,
 } from "./git.js";
@@ -44,6 +45,17 @@ describe("gitEnv", () => {
     gitEnv(base);
 
     expect(base).toEqual({ PATH: "/usr/bin" });
+  });
+});
+
+describe("identityGitConfig", () => {
+  it("lists name, email, gpgsign and gc.auto for preparacao", () => {
+    expect(identityGitConfig("preparacao")).toEqual([
+      ["user.name", "preparacao"],
+      ["user.email", "preparacao@example.invalid"],
+      ["commit.gpgsign", "false"],
+      ["gc.auto", "0"],
+    ]);
   });
 });
 
