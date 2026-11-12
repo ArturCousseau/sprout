@@ -262,14 +262,20 @@ describe("criterion 5: attempt ceiling", () => {
     "checkAttempts sees 1..total, once per push",
     async () => {
       const calls: [total: number, n: number][] = [];
+      const events: string[] = [];
+      // How many "push →" lines were logged when each check ran.
+      const pushLinesSeen: number[] = [];
 
       await runGitScenario({
         scenario: SCENARIOS.A,
         baseDir: base,
         resultsDir: join(base, "resultados"),
-        log: () => {},
+        log: (line) => events.push(line),
         checkAttempts: (total, n) => {
           calls.push([total, n]);
+          pushLinesSeen.push(
+            events.filter((line) => line.includes("push →")).length,
+          );
           checkGitAttempts(total, n);
         },
       });
@@ -281,6 +287,9 @@ describe("criterion 5: attempt ceiling", () => {
         [2, 2],
         [3, 2],
       ]);
+      // Both start checks run in the same microtask round, before any push
+      // finishes. The third depends on the race, so it is not asserted.
+      expect(pushLinesSeen.slice(0, 2)).toEqual([0, 0]);
     },
     GIT_TIMEOUT,
   );
