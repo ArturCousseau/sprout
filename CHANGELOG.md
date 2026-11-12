@@ -31,7 +31,8 @@ para a issue e para o PR de onde veio. O processo de release está no
   tentativas passou de 3 × N para N(N+1)/2, o pior caso legítimo, depois de a
   primeira execução real do cenário B passar de 30. O `docs/demo.md`
   documenta a preparação, o `pull --rebase`, o erro do harness, o teto e o
-  comando ([#15](https://github.com/ArturCousseau/sprout/issues/15)).
+  comando ([#15](https://github.com/ArturCousseau/sprout/issues/15),
+  [#42](https://github.com/ArturCousseau/sprout/pull/42)).
 
 ### Alterado
 
