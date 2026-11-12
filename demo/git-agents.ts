@@ -4,6 +4,7 @@ import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Barrier, createBarrier } from "./barrier.js";
 import {
+  checkGitAttempts,
   classifyPull,
   classifyPush,
   gitEnv,
@@ -151,6 +152,12 @@ async function configure(
 export interface RunGitScenarioOptions extends PrepareGitRunOptions {
   /** Where the event lines go (D7). Tests pass a silent one. */
   log?: (line: string) => void;
+  /**
+   * Called before each push with the run's total so far, counting that push
+   * (D6). Above the ceiling it throws a HarnessError. Tests inject a smaller
+   * ceiling (R5).
+   */
+  checkAttempts?: (totalAttempts: number, n: number) => void;
 }
 
 /**
@@ -164,6 +171,7 @@ export async function runGitScenario({
   baseDir,
   resultsDir,
   log = console.log,
+  checkAttempts = checkGitAttempts,
 }: RunGitScenarioOptions): Promise<RunResult> {
   await prepareGitRun({ baseDir, resultsDir, scenario });
   const clones: string[] = [];
@@ -184,8 +192,14 @@ export async function runGitScenario({
 
   // The concurrent part starts here.
   const barrier = createBarrier(scenario.agents);
+  // One counter for the whole run, shared by every agent (D6).
+  let total = 0;
+  const countPush = (): void => {
+    total += 1;
+    checkAttempts(total, scenario.agents);
+  };
   const runs = clones.map((clone, index) =>
-    runAgent({ agent: index + 1, clone, barrier, log }),
+    runAgent({ agent: index + 1, clone, barrier, log, countPush }),
   );
 
   const settled = await Promise.allSettled(runs);
@@ -215,6 +229,8 @@ interface AgentContext {
   clone: string;
   barrier: Barrier;
   log: (line: string) => void;
+  /** Counts one more push for the run; throws above the ceiling. */
+  countPush: () => void;
 }
 
 /** One agent, already committed: barrier, then push → pull --rebase. */
@@ -223,6 +239,7 @@ async function runAgent({
   clone,
   barrier,
   log,
+  countPush,
 }: AgentContext): Promise<AgentResult> {
   const release = await barrier.arrive();
   let attempts = 0;
@@ -237,8 +254,10 @@ async function runAgent({
   });
 
   for (;;) {
-    // Step 6 puts the ceiling check here. No await may come between the
-    // barrier release above and this point.
+    // Before each push (D6). No await may come between the barrier release
+    // above and this call: all agents then count their first push in the same
+    // microtask round, before any push can finish.
+    countPush();
     attempts += 1;
     const push = await runGit([
       "-C",

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { gitOk, prepareGitRun, runGit, runGitScenario } from "./git-agents.js";
+import { checkGitAttempts } from "./git.js";
 import { HarnessError } from "./harness-error.js";
 import { readResult, type RunResult } from "./results.js";
 import { SCENARIOS, type ScenarioId } from "./scenarios.js";
@@ -251,6 +252,67 @@ describe("criterion 4: agent cycle", () => {
           ]),
         ).toBe(`agente-${n}|agente ${n}`);
       }
+    },
+    GIT_TIMEOUT,
+  );
+});
+
+describe("criterion 5: attempt ceiling", () => {
+  it(
+    "checkAttempts sees 1..total, once per push",
+    async () => {
+      const calls: [total: number, n: number][] = [];
+
+      await runGitScenario({
+        scenario: SCENARIOS.A,
+        baseDir: base,
+        resultsDir: join(base, "resultados"),
+        log: () => {},
+        checkAttempts: (total, n) => {
+          calls.push([total, n]);
+          checkGitAttempts(total, n);
+        },
+      });
+
+      // Written by hand: scenario A always takes 3 pushes (one accepted at
+      // once; the other rejected once, clean rebase, accepted).
+      expect(calls).toEqual([
+        [1, 2],
+        [2, 2],
+        [3, 2],
+      ]);
+    },
+    GIT_TIMEOUT,
+  );
+
+  it(
+    "ceiling 1: HarnessError only after the in-flight agent settles, no JSON",
+    async () => {
+      const results = join(base, "resultados");
+      const events: string[] = [];
+      let snapshot: string[] = [];
+
+      // Both agents leave the barrier in the same microtask round: the first
+      // passes the check and starts its push, the second throws at once.
+      const running = runGitScenario({
+        scenario: SCENARIOS.A,
+        baseDir: base,
+        resultsDir: results,
+        log: (line) => events.push(line),
+        checkAttempts: (total) => {
+          if (total > 1) throw new HarnessError("ceiling 1");
+        },
+      }).finally(() => {
+        snapshot = [...events];
+      });
+
+      await expect(running).rejects.toThrow(HarnessError);
+      await expect(running).rejects.toThrow("ceiling 1");
+      // The run waited for the push in flight (allSettled, R1).
+      const pushes = snapshot.filter((line) => line.includes("push →"));
+      expect(pushes.length).toBe(1);
+      expect(pushes[0]).toContain("push → aceito");
+      expect(existsSync(join(results, "git-A.json"))).toBe(false);
     },
     GIT_TIMEOUT,
   );
