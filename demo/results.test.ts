@@ -156,6 +156,11 @@ describe("writeResult / readResult", () => {
       "agents[1].agent must be",
     ],
     [
+      "agent fractional",
+      gitAWithAgent1((a) => (a.agent = 1.5)),
+      "agents[1].agent must be a positive integer",
+    ],
+    [
       "agent number repeated",
       gitAWithAgent1((a) => (a.agent = 1)),
       "agents[1].agent 1 is repeated",
@@ -174,6 +179,11 @@ describe("writeResult / readResult", () => {
       "attempts as a string",
       gitAWithAgent1((a) => (a.attempts = "3")),
       "agents[1].attempts must be",
+    ],
+    [
+      "attempts zero",
+      gitAWithAgent1((a) => (a.attempts = 0)),
+      "agents[1].attempts must be a positive integer",
     ],
     [
       "rejections as an array",
@@ -201,9 +211,24 @@ describe("writeResult / readResult", () => {
       "agents[1].reparented must be",
     ],
     [
+      "reparented as a string",
+      gitAWithAgent1((a) => (a.reparented = "yes")),
+      "agents[1].reparented must be a boolean or null",
+    ],
+    [
       "endMs negative",
       gitAWithAgent1((a) => (a.endMs = -1)),
       "agents[1].endMs must be",
+    ],
+    [
+      "endMs null",
+      gitAWithAgent1((a) => (a.endMs = null)),
+      "agents[1].endMs must be a non-negative number",
+    ],
+    [
+      "endMs as a string",
+      gitAWithAgent1((a) => (a.endMs = "10")),
+      "agents[1].endMs must be a non-negative number",
     ],
   ])("%s → error naming the problem", async (_label, data, problem) => {
     const path = await plantGitA(JSON.stringify(data));

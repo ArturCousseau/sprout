@@ -1,6 +1,6 @@
 import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resetDemoTmp } from "./reset.js";
 
@@ -48,6 +48,20 @@ describe("resetDemoTmp", () => {
 
     expect(await exists(demoTmp)).toBe(false);
     expect(await exists(join(repoRoot, "demo/keep.txt"))).toBe(true);
+  });
+
+  it.each([
+    // resolve() reads a relative path against the cwd, as the CLI would.
+    ["a path relative to the cwd", () => relative(process.cwd(), demoTmp)],
+    ["demo/tmp/ with a trailing slash", () => `${demoTmp}/`],
+  ])("accepts %s and deletes only demo/tmp", async (_label, target) => {
+    await resetDemoTmp(repoRoot, target());
+
+    expect(await exists(demoTmp)).toBe(false);
+    expect(await exists(join(repoRoot, "root.txt"))).toBe(true);
+    expect(await exists(join(repoRoot, "demo/keep.txt"))).toBe(true);
+    expect(await exists(join(repoRoot, "demo/tmp2/keep.txt"))).toBe(true);
+    expect(await exists(join(base, "outside/keep.txt"))).toBe(true);
   });
 
   it("does not throw when demo/tmp is missing", async () => {

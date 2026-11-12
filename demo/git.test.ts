@@ -269,6 +269,18 @@ describe("classifyPush", () => {
       "accepted line with exit code 1",
     ],
     [
+      "accepted line with code 128",
+      line(" ", "f411491..4f2287d"),
+      128,
+      "accepted line with exit code 128",
+    ],
+    [
+      "rejected flag with an accepted summary",
+      line("!", "f411491..4f2287d"),
+      1,
+      'unknown rejection: "f411491..4f2287d"',
+    ],
+    [
       "rejected line with code 0",
       line("!", "[rejected] (fetch first)"),
       0,
