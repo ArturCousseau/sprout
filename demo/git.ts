@@ -127,3 +127,27 @@ export function classifyPush(stdout: string, exitCode: number): PushResult {
     `push: unknown flag ${JSON.stringify(flag)}: ${JSON.stringify(line)}`,
   );
 }
+
+export type PullResult = "rebased" | "conflict";
+
+/**
+ * Classifies one `git pull --rebase` from its exit code and whether
+ * `.git/rebase-merge` exists afterwards (D5): the code alone does not separate
+ * the cases (Phase 1 of #14, E2). Code 0 with no rebase in progress → back to
+ * the push; code 1 with a rebase in progress → real conflict. Any other
+ * combination is a HarnessError, never a guess.
+ */
+export function classifyPull(
+  exitCode: number,
+  rebaseInProgress: boolean,
+): PullResult {
+  if (exitCode === 0 && !rebaseInProgress) {
+    return "rebased";
+  }
+  if (exitCode === 1 && rebaseInProgress) {
+    return "conflict";
+  }
+  throw new HarnessError(
+    `pull --rebase: exit code ${exitCode} with rebase-merge ${rebaseInProgress ? "present" : "absent"}`,
+  );
+}

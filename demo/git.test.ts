@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   checkGitAttempts,
+  classifyPull,
   classifyPush,
   gitEnv,
   identityGitConfig,
@@ -307,5 +308,26 @@ describe("classifyPush", () => {
   ])("synthetic: %s → HarnessError", (_label, stdout, code, message) => {
     expect(() => classifyPush(stdout, code)).toThrow(HarnessError);
     expect(() => classifyPush(stdout, code)).toThrow(message);
+  });
+});
+
+// D5: the exit code alone does not separate the cases (E2), so the agent also
+// passes whether .git/rebase-merge exists after `git pull --rebase`.
+describe("criterion 7: classifyPull", () => {
+  it.each([
+    [0, false, "rebased"],
+    [1, true, "conflict"],
+  ] as const)("code %i, rebase-merge %s → %s", (code, inProgress, result) => {
+    expect(classifyPull(code, inProgress)).toBe(result);
+  });
+
+  it.each([
+    [0, true, "exit code 0 with rebase-merge present"],
+    [1, false, "exit code 1 with rebase-merge absent"],
+    [128, false, "exit code 128 with rebase-merge absent"],
+    [128, true, "exit code 128 with rebase-merge present"],
+  ])("code %i, rebase-merge %s → HarnessError", (code, inProgress, message) => {
+    expect(() => classifyPull(code, inProgress)).toThrow(HarnessError);
+    expect(() => classifyPull(code, inProgress)).toThrow(message);
   });
 });
