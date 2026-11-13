@@ -4,6 +4,7 @@ import { parsePort } from "./port.js";
 describe("criterion 3: parsePort", () => {
   // Written by hand, not derived from parsePort.
   it.each([
+    ["0", 0],
     ["1", 1],
     ["3000", 3000],
     ["65535", 65535],
