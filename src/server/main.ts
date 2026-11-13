@@ -13,6 +13,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { buildApp } from "./app.js";
 import { openDatabase } from "./db.js";
+import { parsePort } from "./port.js";
 
 const HOST = "127.0.0.1";
 const DEFAULT_PORT = 3000;
@@ -30,8 +31,8 @@ if (!dataDir) {
 }
 
 const portText = process.env.PORT ?? String(DEFAULT_PORT);
-const port = Number(portText);
-if (!/^\d+$/.test(portText) || port < 1 || port > 65535) {
+const port = parsePort(portText);
+if (port === null) {
   fail(`PORT must be an integer from 1 to 65535, got "${portText}"`);
 }
 
