@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { HarnessError } from "./harness-error.js";
-import { checkStatus, type SproutOperation } from "./sprout-responses.js";
+import {
+  checkStatus,
+  parseAccepted,
+  parseConflicts,
+  parseMainRef,
+  type SproutOperation,
+} from "./sprout-responses.js";
 
 // Written by hand, not derived from EXPECTED_STATUS: removing a status from
 // the list must make its test fail, not disappear.
@@ -49,6 +55,70 @@ describe("checkStatus", () => {
     expect(() => checkStatus("getMain", 201)).toThrow(HarnessError);
     expect(() => checkStatus("getMain", 201)).toThrow(
       "unexpected status 201 for getMain (expected 200)",
+    );
+  });
+});
+
+// Bodies and expected values written by hand (plan, "Corpos de resposta").
+// Each case is wrapped in a one-element tuple so that it.each does not spread
+// an array body ([]) into the test arguments.
+describe("criterion 6: response bodies", () => {
+  it.each([
+    [{ id: 1 }, 1],
+    [{ id: 7 }, 7],
+  ])("parseMainRef(%j) → %i", (body, expected) => {
+    expect(parseMainRef(body)).toBe(expected);
+  });
+
+  it.each([
+    [{}],
+    [{ id: "1" }],
+    [{ id: 1.5 }],
+    [{ id: null }],
+    [null],
+    [[]],
+    ["1"],
+  ])("parseMainRef(%j) → HarnessError", (body) => {
+    expect(() => parseMainRef(body)).toThrow(HarnessError);
+    expect(() => parseMainRef(body)).toThrow("id must be an integer");
+  });
+
+  it.each([
+    [{ id: 2, parent: 1 }, 1],
+    [{ parent: 3 }, 3],
+  ])("parseAccepted(%j) → %i", (body, expected) => {
+    expect(parseAccepted(body)).toBe(expected);
+  });
+
+  it.each([
+    [{}],
+    [{ parent: "1" }],
+    [{ parent: 1.5 }],
+    [{ parent: null }],
+    [null],
+  ])("parseAccepted(%j) → HarnessError", (body) => {
+    expect(() => parseAccepted(body)).toThrow(HarnessError);
+    expect(() => parseAccepted(body)).toThrow("parent must be an integer");
+  });
+
+  it.each([
+    [{ conflicts: ["conflito.txt"] }, ["conflito.txt"]],
+    [{ conflicts: ["a.txt", "b.txt"] }, ["a.txt", "b.txt"]],
+  ])("parseConflicts(%j) → %j", (body, expected) => {
+    expect(parseConflicts(body)).toEqual(expected);
+  });
+
+  it.each([
+    [{}],
+    [{ conflicts: [] }],
+    [{ conflicts: "conflito.txt" }],
+    [{ conflicts: [1] }],
+    [{ conflicts: ["a.txt", 1] }],
+    [null],
+  ])("parseConflicts(%j) → HarnessError", (body) => {
+    expect(() => parseConflicts(body)).toThrow(HarnessError);
+    expect(() => parseConflicts(body)).toThrow(
+      "conflicts must be a non-empty array of strings",
     );
   });
 });

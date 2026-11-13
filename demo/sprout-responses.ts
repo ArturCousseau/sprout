@@ -35,3 +35,55 @@ export function checkStatus(op: SproutOperation, status: number): void {
     );
   }
 }
+
+// The parse* functions below take the already decoded JSON body (`unknown`,
+// since the server is not trusted to be right) and return only the field the
+// agent uses. A body outside the format is a HarnessError, not a metric.
+
+/** Reads a field of a JSON object; undefined when `body` is not an object. */
+function field(body: unknown, name: string): unknown {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return undefined;
+  }
+  return (body as Record<string, unknown>)[name];
+}
+
+/** GET /refs/main 200 → `{ id }`: returns the head changeset id. */
+export function parseMainRef(body: unknown): number {
+  const id = field(body, "id");
+  if (typeof id !== "number" || !Number.isInteger(id)) {
+    throw new HarnessError(
+      `sprout: getMain body: id must be an integer (got ${JSON.stringify(body)})`,
+    );
+  }
+  return id;
+}
+
+/**
+ * POST /changesets 201 → the created changeset: returns its `parent`, which
+ * the agent compares with the parent it sent to detect a reparent.
+ */
+export function parseAccepted(body: unknown): number {
+  const parent = field(body, "parent");
+  if (typeof parent !== "number" || !Number.isInteger(parent)) {
+    throw new HarnessError(
+      `sprout: postChangesets 201 body: parent must be an integer (got ${JSON.stringify(body)})`,
+    );
+  }
+  return parent;
+}
+
+/** POST /changesets 409 → `{ conflicts }`: returns the conflicting paths. */
+export function parseConflicts(body: unknown): string[] {
+  const conflicts = field(body, "conflicts");
+  if (
+    !Array.isArray(conflicts) ||
+    conflicts.length === 0 ||
+    !conflicts.every((path) => typeof path === "string")
+  ) {
+    throw new HarnessError(
+      `sprout: postChangesets 409 body: conflicts must be a non-empty array of strings (got ${JSON.stringify(body)})`,
+    );
+  }
+  return conflicts;
+}
