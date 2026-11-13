@@ -318,3 +318,134 @@ describe("criterion 8: scenario table (D9)", () => {
     SPROUT_TIMEOUT,
   );
 });
+
+/** The one server the run started. */
+function onlyServer(): SproutServer {
+  expect(started).toHaveLength(1);
+  return started[0];
+}
+
+/** Like capture, but its stop() stops the real server and then fails. */
+async function captureFailingStop(
+  options: StartSproutServerOptions,
+): Promise<SproutServer> {
+  const server = await capture(options);
+  return {
+    ...server,
+    stop: async () => {
+      await server.stop();
+      throw new HarnessError("stop failed");
+    },
+  };
+}
+
+// Written by hand (NV4): a process that dies by SIGTERM has no exit code.
+const STOPPED_BY_SIGTERM = { code: null, signal: "SIGTERM" };
+
+describe("criterion 2: server stopped on every path", () => {
+  it(
+    "success: server stopped",
+    async () => {
+      await runSproutScenario(options(SCENARIOS.A));
+
+      const server = onlyServer();
+      expect(await settledValue(server.exited)).toEqual(STOPPED_BY_SIGTERM);
+      await expect(fetch(`${server.url}/refs/main`)).rejects.toThrow(
+        "fetch failed",
+      );
+    },
+    SPROUT_TIMEOUT,
+  );
+
+  it(
+    "HarnessError before the barrier: server stopped",
+    async () => {
+      const running = runSproutScenario(
+        options(SCENARIOS.A, { fetch: answering("PUT", 202, "{}") }),
+      );
+
+      await expect(running).rejects.toThrow(HarnessError);
+      expect(await settledValue(onlyServer().exited)).toEqual(
+        STOPPED_BY_SIGTERM,
+      );
+    },
+    SPROUT_TIMEOUT,
+  );
+
+  it(
+    "bug after the barrier: rethrown, server stopped",
+    async () => {
+      // The first event line comes after the barrier, from an agent.
+      const log = (): void => {
+        throw new Error("plain bug");
+      };
+
+      const running = runSproutScenario(options(SCENARIOS.A, { log }));
+
+      await expect(running).rejects.toThrow("plain bug");
+      await expect(running).rejects.not.toBeInstanceOf(HarnessError);
+      expect(await settledValue(onlyServer().exited)).toEqual(
+        STOPPED_BY_SIGTERM,
+      );
+    },
+    SPROUT_TIMEOUT,
+  );
+
+  it(
+    "stop fails after a good run: HarnessError, no JSON",
+    async () => {
+      const running = runSproutScenario(
+        options(SCENARIOS.A, { startServer: captureFailingStop }),
+      );
+
+      await expect(running).rejects.toThrow(HarnessError);
+      await expect(running).rejects.toThrow("stop failed");
+      expect(existsSync(join(base, "resultados", "sprout-A.json"))).toBe(false);
+    },
+    SPROUT_TIMEOUT,
+  );
+
+  it(
+    "error in flight and stop fails: first error wins",
+    async () => {
+      const running = runSproutScenario(
+        options(SCENARIOS.A, {
+          fetch: answering("PUT", 202, "{}"),
+          startServer: captureFailingStop,
+        }),
+      );
+
+      await expect(running).rejects.toThrow("unexpected status 202");
+      await expect(running).rejects.not.toThrow("stop failed");
+    },
+    SPROUT_TIMEOUT,
+  );
+});
+
+describe("decision 3: server dies during the run", () => {
+  it(
+    "server killed before the agents → HarnessError cannot reach",
+    async () => {
+      // Starts the real server and kills it before handing it over.
+      const startKilled = async (
+        startOptions: StartSproutServerOptions,
+      ): Promise<SproutServer> => {
+        const server = await capture(startOptions);
+        expect(server.pid).toBeGreaterThan(0);
+        process.kill(server.pid, "SIGKILL");
+        await server.exited;
+        return server;
+      };
+
+      const running = runSproutScenario(
+        options(SCENARIOS.A, { startServer: startKilled }),
+      );
+
+      await expect(running).rejects.toBeInstanceOf(HarnessError);
+      await expect(running).rejects.toThrow(
+        "sprout: GET /refs/main: cannot reach the server",
+      );
+    },
+    SPROUT_TIMEOUT,
+  );
+});

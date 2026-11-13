@@ -54,18 +54,48 @@ export async function runSproutScenario({
   }
   const server = await startServer({ dataDir });
 
+  // The server is stopped on every path (R5): after an error too, and before
+  // the result is written, so a server that fails to stop leaves no JSON.
+  let agents: AgentResult[];
+  try {
+    agents = await runAgents(scenario, server.url, send, log);
+  } catch (error) {
+    // P1: the first error wins. stop() only rejects after the child closed
+    // (SIGKILL), so ignoring its error here never leaves a process behind.
+    await server.stop().catch(() => {});
+    throw error;
+  }
+  await server.stop(); // here a failure is the run's only error: thrown
+
+  const run: RunResult = { system: "sprout", scenario: scenario.id, agents };
+  await writeResult(resultsDir, run);
+  log(`[sprout] resumo ${JSON.stringify(summarize(agents))}`);
+  return run;
+}
+
+/**
+ * The agents of one run against the server at `url`: preparation in
+ * sequence, then the barrier and the POSTs in parallel. Throws one
+ * HarnessError with every failed agent's message, or rethrows a bug.
+ */
+async function runAgents(
+  scenario: Scenario,
+  url: string,
+  send: SproutFetch,
+  log: (line: string) => void,
+): Promise<AgentResult[]> {
   // Every agent's GET, hash and PUT, one after the other, before the barrier
   // exists (D5): a request that fails here throws before any agent waits, so
   // no agent is left waiting forever for an arrival that never comes.
   const prepared: Prepared[] = [];
   for (let agent = 1; agent <= scenario.agents; agent++) {
-    const head = await request(send, "GET", `${server.url}/refs/main`);
+    const head = await request(send, "GET", `${url}/refs/main`);
     checkStatus("getMain", head.status);
     const parent = parseMainRef(await readJson(head, "getMain"));
 
     const content = `agente ${agent}\n`;
     const hash = hashContent(content);
-    const put = await request(send, "PUT", `${server.url}/blobs/${hash}`, {
+    const put = await request(send, "PUT", `${url}/blobs/${hash}`, {
       headers: { "content-type": "application/octet-stream" },
       body: content,
     });
@@ -84,7 +114,7 @@ export async function runSproutScenario({
   // The concurrent part starts here.
   const barrier = createBarrier(scenario.agents);
   const runs = prepared.map((agent) =>
-    runAgent({ ...agent, url: server.url, send, barrier, log }),
+    runAgent({ ...agent, url, send, barrier, log }),
   );
 
   const settled = await Promise.allSettled(runs);
@@ -103,14 +133,7 @@ export async function runSproutScenario({
   if (failures.length > 0) {
     throw new HarnessError(failures.join("\n"));
   }
-
-  // Before the result is written (R5): a server that fails to stop leaves no
-  // JSON behind.
-  await server.stop();
-  const run: RunResult = { system: "sprout", scenario: scenario.id, agents };
-  await writeResult(resultsDir, run);
-  log(`[sprout] resumo ${JSON.stringify(summarize(agents))}`);
-  return run;
+  return agents;
 }
 
 /** What an agent has ready before the barrier. */
@@ -176,17 +199,26 @@ async function runAgent({
 }
 
 /**
- * Every request to the server goes through here. It is not async and has no
- * await before `send`, so a POST called right after the barrier release
- * leaves in that same microtask round (D6).
+ * Every request to the server goes through here. A fetch that fails (the
+ * connection was refused or reset) is a HarnessError (R4). The call to `send`
+ * is the first thing it does, with no await before it: an async function runs
+ * without pausing until its first await, so a POST called right after the
+ * barrier release leaves in that same microtask round (D6).
  */
-function request(
+async function request(
   send: SproutFetch,
   method: string,
   url: string,
   init: RequestInit = {},
 ): Promise<Response> {
-  return send(url, { ...init, method });
+  try {
+    return await send(url, { ...init, method });
+  } catch (error) {
+    throw new HarnessError(
+      `sprout: ${method} ${new URL(url).pathname}: cannot reach the server`,
+      { cause: error },
+    );
+  }
 }
 
 /** The decoded JSON body; a body that is not JSON is a HarnessError (R10). */
