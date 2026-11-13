@@ -193,8 +193,10 @@ describe("criterion 5: agent cycle", () => {
         startServer: capture,
       });
 
-      // Written by hand: both POSTs leave in the same microtask round as the
-      // barrier release, before any answer (D6).
+      // Written by hand: every POST leaves before any answer arrives (D6).
+      // A delay of only microtasks between the barrier and the POST is the
+      // same for every agent and is not caught (mutation M7); the "no await"
+      // rule in runAgent is kept by reading the code.
       expect(answeredAtSend).toEqual([0, 0]);
     },
     SPROUT_TIMEOUT,
