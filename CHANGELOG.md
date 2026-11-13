@@ -33,6 +33,19 @@ para a issue e para o PR de onde veio. O processo de release está no
   documenta a preparação, o `pull --rebase`, o erro do harness, o teto e o
   comando ([#15](https://github.com/ArturCousseau/sprout/issues/15),
   [#42](https://github.com/ArturCousseau/sprout/pull/42)).
+- Agentes do Sprout da demo: `pnpm demo:sprout --cenario A|B|C` sobe o
+  servidor como processo filho (`node --import tsx`, um processo só) com
+  dados vazios e `PORT=0`, que o `src/server/main.ts` passa a aceitar (porta
+  livre escolhida pelo sistema). Cada agente faz `GET /refs/main` e
+  `PUT /blobs` antes da barreira e um único `POST /changesets` depois dela,
+  sem retry; a troca de pai é detectada pelo `parent` da resposta, e o `409`
+  vira conflito. O servidor é encerrado em todos os caminhos (SIGTERM e, se
+  não sair em 5 s, SIGKILL) antes de o JSON ser gravado; servidor que não
+  fica pronto em 10 s, que morre ou que responde fora do esperado é erro do
+  harness. O `docs/demo.md` documenta o servidor como processo filho, o
+  ciclo, o registro e o comando
+  ([#16](https://github.com/ArturCousseau/sprout/issues/16),
+  [#43](https://github.com/ArturCousseau/sprout/pull/43)).
 
 ### Alterado
 
