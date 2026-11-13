@@ -16,7 +16,8 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "tsx src/server/main.ts",
     "demo:reset": "tsx demo/reset-main.ts",
-    "demo:git": "tsx demo/git-main.ts"
+    "demo:git": "tsx demo/git-main.ts",
+    "demo:sprout": "tsx demo/sprout-main.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
