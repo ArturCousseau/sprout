@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  ResultFileError,
   type RunResult,
   readResult,
   resultPath,
@@ -237,5 +238,45 @@ describe("writeResult / readResult", () => {
 
     await expect(read).rejects.toThrow(`${path}: `);
     await expect(read).rejects.toThrow(problem);
+  });
+});
+
+describe("ResultFileError (R1)", () => {
+  // Each case leaves a bad git-A.json (or none) and gives the message, written
+  // by hand from the path.
+  it.each([
+    [
+      "missing file",
+      async () => {},
+      (path: string) => `result file not found: ${path}`,
+    ],
+    [
+      "unreadable file (EISDIR)",
+      async () => {
+        await mkdir(resultPath(dir, "git", "A"), { recursive: true });
+      },
+      (path: string) => `cannot read result file ${path}`,
+    ],
+    [
+      "broken JSON",
+      async () => {
+        await plantGitA('{"system": "git", ');
+      },
+      (path: string) => `invalid JSON in ${path}`,
+    ],
+    [
+      "wrong shape",
+      async () => {
+        await plantGitA(JSON.stringify({ ...gitA, system: "sprout" }));
+      },
+      (path: string) => `${path}: system must be "git"`,
+    ],
+  ])("%s → ResultFileError", async (_label, plant, message) => {
+    await plant();
+
+    const error = await readResult(dir, "git", "A").catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ResultFileError);
+    expect((error as Error).message).toBe(message(resultPath(dir, "git", "A")));
   });
 });

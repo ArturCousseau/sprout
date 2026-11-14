@@ -5,6 +5,14 @@ import { SCENARIOS, type ScenarioId } from "./scenarios.js";
 
 export type System = "git" | "sprout";
 
+/**
+ * A result file is missing, unreadable or invalid (R1 of #18). The scoreboard
+ * turns only this error into exit code 1; any other error is a bug.
+ */
+export class ResultFileError extends Error {
+  override name = "ResultFileError";
+}
+
 /** Everything one run produced; the scoreboard is computed from it (D5). */
 export interface RunResult {
   system: System;
@@ -51,19 +59,23 @@ export async function readResult(
     text = await readFile(path, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new Error(`result file not found: ${path}`, { cause: error });
+      throw new ResultFileError(`result file not found: ${path}`, {
+        cause: error,
+      });
     }
-    throw new Error(`cannot read result file ${path}`, { cause: error });
+    throw new ResultFileError(`cannot read result file ${path}`, {
+      cause: error,
+    });
   }
   let data: unknown;
   try {
     data = JSON.parse(text);
   } catch (error) {
-    throw new Error(`invalid JSON in ${path}`, { cause: error });
+    throw new ResultFileError(`invalid JSON in ${path}`, { cause: error });
   }
   const problem = checkRunResult(data, system, scenario);
   if (problem !== null) {
-    throw new Error(`${path}: ${problem}`);
+    throw new ResultFileError(`${path}: ${problem}`);
   }
   return data as RunResult;
 }
