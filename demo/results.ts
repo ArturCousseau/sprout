@@ -167,8 +167,12 @@ function checkRunResult(
         return `${at}.rejections["${type}"] must be a non-negative integer`;
       }
     }
-    if (agent.reparented !== null && typeof agent.reparented !== "boolean") {
-      return `${at}.reparented must be a boolean or null`;
+    // git never reparents (null); Sprout always says whether it did (R4).
+    if (system === "git" && agent.reparented !== null) {
+      return `${at}.reparented must be null in git`;
+    }
+    if (system === "sprout" && typeof agent.reparented !== "boolean") {
+      return `${at}.reparented must be a boolean in sprout`;
     }
     if (
       typeof agent.endMs !== "number" ||

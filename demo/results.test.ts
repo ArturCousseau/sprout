@@ -87,6 +87,15 @@ function gitAWithAgent1(edit: (agent: Record<string, unknown>) => void) {
   return copy;
 }
 
+// sproutC with agents[1] changed by `edit` (a deep copy; sproutC stays intact).
+function sproutCWithAgent1(edit: (agent: Record<string, unknown>) => void) {
+  const copy = structuredClone(sproutC) as unknown as {
+    agents: Record<string, unknown>[];
+  };
+  edit(copy.agents[1]);
+  return copy;
+}
+
 describe("writeResult / readResult", () => {
   it.each([
     ["git-A.json", gitA],
@@ -214,7 +223,7 @@ describe("writeResult / readResult", () => {
     [
       "reparented as a string",
       gitAWithAgent1((a) => (a.reparented = "yes")),
-      "agents[1].reparented must be a boolean or null",
+      "agents[1].reparented must be null in git",
     ],
     [
       "endMs negative",
@@ -279,4 +288,45 @@ describe("ResultFileError (R1)", () => {
     expect(error).toBeInstanceOf(ResultFileError);
     expect((error as Error).message).toBe(message(resultPath(dir, "git", "A")));
   });
+});
+
+describe("reparented per system (R4)", () => {
+  // Messages written by hand: git only takes null, Sprout only booleans.
+  it.each([
+    [
+      "git with reparented true",
+      "git",
+      "A",
+      gitAWithAgent1((a) => (a.reparented = true)),
+      "agents[1].reparented must be null in git",
+    ],
+    [
+      "sprout with reparented null",
+      "sprout",
+      "C",
+      sproutCWithAgent1((a) => (a.reparented = null)),
+      "agents[1].reparented must be a boolean in sprout",
+    ],
+    [
+      "sprout with reparented as a string",
+      "sprout",
+      "C",
+      sproutCWithAgent1((a) => (a.reparented = "yes")),
+      "agents[1].reparented must be a boolean in sprout",
+    ],
+  ] as const)(
+    "%s → ResultFileError naming the field",
+    async (_label, system, scenario, data, problem) => {
+      await mkdir(dir, { recursive: true });
+      const path = resultPath(dir, system, scenario);
+      await writeFile(path, JSON.stringify(data));
+
+      const error = await readResult(dir, system, scenario).catch(
+        (e: unknown) => e,
+      );
+
+      expect(error).toBeInstanceOf(ResultFileError);
+      expect((error as Error).message).toBe(`${path}: ${problem}`);
+    },
+  );
 });
