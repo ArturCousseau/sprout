@@ -1,10 +1,11 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   ResultFileError,
   type RunResult,
+  readMtime,
   readResult,
   resultPath,
   writeResult,
@@ -287,6 +288,33 @@ describe("ResultFileError (R1)", () => {
 
     expect(error).toBeInstanceOf(ResultFileError);
     expect((error as Error).message).toBe(message(resultPath(dir, "git", "A")));
+  });
+});
+
+describe("readMtime (R5)", () => {
+  it("gives the file's modification time", async () => {
+    const path = await writeResult(dir, gitA);
+    // Built with the local constructor, like the scoreboard reads it (R6).
+    const date = new Date(2026, 10, 12, 23, 44);
+    await utimes(path, date, date);
+
+    const mtime = await readMtime(path);
+
+    expect(mtime.getTime()).toBe(date.getTime());
+  });
+
+  it("missing file → ResultFileError with the path and the cause", async () => {
+    const path = resultPath(dir, "git", "A");
+
+    const error = await readMtime(path).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ResultFileError);
+    expect((error as Error).message).toBe(
+      `cannot read modification time of ${path}`,
+    );
+    expect(((error as Error).cause as NodeJS.ErrnoException).code).toBe(
+      "ENOENT",
+    );
   });
 });
 

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type AgentResult, REJECTION_TYPES } from "./metrics.js";
 import { SCENARIOS, type ScenarioId } from "./scenarios.js";
@@ -78,6 +78,20 @@ export async function readResult(
     throw new ResultFileError(`${path}: ${problem}`);
   }
   return data as RunResult;
+}
+
+/**
+ * Modification time of a result file, for the scoreboard's "resultados:"
+ * line (D4, R5). A failure is a ResultFileError, like readResult's.
+ */
+export async function readMtime(path: string): Promise<Date> {
+  try {
+    return (await stat(path)).mtime;
+  } catch (error) {
+    throw new ResultFileError(`cannot read modification time of ${path}`, {
+      cause: error,
+    });
+  }
 }
 
 const OUTCOMES = new Set(["accepted", "conflict"]);
