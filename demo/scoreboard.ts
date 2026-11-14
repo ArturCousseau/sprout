@@ -1,5 +1,6 @@
 import type { RunSummary } from "./metrics.js";
 import type { System } from "./results.js";
+import type { Scenario } from "./scenarios.js";
 
 /** Row labels of the scoreboard, in the order of docs/demo.md §6 (D2). */
 export const LABELS = [
@@ -34,4 +35,36 @@ export function formatSummaryLine(system: System, summary: RunSummary): string {
   const cells = formatColumn(summary);
   const pairs = LABELS.map((label, index) => `${label} ${cells[index]}`);
   return `[${system}] resumo: ${pairs.join(", ")}`;
+}
+
+/** `Cenário B: 10 agentes, arquivos diferentes`, from SCENARIOS (D2). */
+export function scenarioTitle(scenario: Scenario): string {
+  const files = scenario.sameFile ? "mesmo arquivo" : "arquivos diferentes";
+  return `Cenário ${scenario.id}: ${scenario.agents} agentes, ${files}`;
+}
+
+/** Spaces between the label column and each value column (R9). */
+const GAP = "    ";
+
+/**
+ * The two-column table, one string per line without "\n": a header line and
+ * one line per label. Labels go left (padEnd), values right (padStart); each
+ * column is as wide as its widest text, with a fixed gap between them (R9).
+ */
+export function formatTable(git: RunSummary, sprout: RunSummary): string[] {
+  const columns = [
+    ["git", ...formatColumn(git)],
+    ["sprout", ...formatColumn(sprout)],
+  ];
+  const widths = columns.map((column) =>
+    Math.max(...column.map((text) => text.length)),
+  );
+  const labelWidth = Math.max(...LABELS.map((label) => label.length));
+  const labels = ["", ...LABELS];
+  return labels.map((label, row) => {
+    const values = columns.map(
+      (column, index) => GAP + (column[row] ?? "").padStart(widths[index] ?? 0),
+    );
+    return label.padEnd(labelWidth) + values.join("");
+  });
 }
