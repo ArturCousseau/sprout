@@ -56,7 +56,8 @@ para a issue e para o PR de onde veio. O processo de release está no
   Sprout. As linhas `[git] resumo` e `[sprout] resumo` deixam o JSON cru e
   usam os rótulos do placar. O `docs/demo.md` traz uma saída real do placar
   e os códigos de saída
-  ([#18](https://github.com/ArturCousseau/sprout/issues/18)).
+  ([#18](https://github.com/ArturCousseau/sprout/issues/18),
+  [#44](https://github.com/ArturCousseau/sprout/pull/44)).
 
 ### Alterado
 
