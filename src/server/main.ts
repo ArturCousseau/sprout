@@ -4,7 +4,9 @@
  *   SPROUT_DATA_DIR  required; created if missing. Blobs are stored in
  *                    `<SPROUT_DATA_DIR>/blobs` and metadata (changesets and
  *                    the main ref) in the SQLite file `<SPROUT_DATA_DIR>/sprout.db`
- *   PORT             optional, integer from 1 to 65535, default 3000
+ *   PORT             optional, integer from 0 to 65535, default 3000; 0 lets
+ *                    the system pick a free port (the demo uses it), and the
+ *                    real port is in the "listening" line
  *
  * Listens on 127.0.0.1 only: the server has no authentication, and the demo
  * runs every agent on the same machine.
@@ -13,6 +15,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { buildApp } from "./app.js";
 import { openDatabase } from "./db.js";
+import { parsePort } from "./port.js";
 
 const HOST = "127.0.0.1";
 const DEFAULT_PORT = 3000;
@@ -30,9 +33,9 @@ if (!dataDir) {
 }
 
 const portText = process.env.PORT ?? String(DEFAULT_PORT);
-const port = Number(portText);
-if (!/^\d+$/.test(portText) || port < 1 || port > 65535) {
-  fail(`PORT must be an integer from 1 to 65535, got "${portText}"`);
+const port = parsePort(portText);
+if (port === null) {
+  fail(`PORT must be an integer from 0 to 65535, got "${portText}"`);
 }
 
 await mkdir(dataDir, { recursive: true });

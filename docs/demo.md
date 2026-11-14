@@ -219,8 +219,54 @@ Decidimos aceitar e documentar, em vez de mudar a forma de lançar os pushes.
 
 ### Preparação
 
-1. Sobe o servidor com um diretório de dados vazio, em `demo/tmp/sprout-data`.
-2. O servidor cria o changeset raiz e a `main` apontando para ele.
+Cada execução começa do zero, como no git:
+
+1. Apaga o que sobrou da execução anterior: o diretório de dados
+   `demo/tmp/sprout-data` e o JSON do cenário (§6).
+2. Sobe o servidor como processo filho da demo (`startSproutServer` em
+   `demo/sprout-server.ts`), com `SPROUT_DATA_DIR=demo/tmp/sprout-data` e
+   `PORT=0`. Ao abrir, o servidor recria o diretório de dados, o changeset raiz
+   e a `main` apontando para ele.
+3. Espera a linha `sprout server listening on <endereço>` no stdout do servidor
+   e manda todos os pedidos para esse endereço. Com `PORT=0`, o sistema escolhe
+   uma porta livre, e a linha traz a porta escolhida.
+
+### O servidor como processo filho
+
+O comando do filho é o próprio Node, com o tsx carregado por `--import`:
+`process.execPath --import tsx src/server/main.ts`, a partir da raiz do
+repositório. Não é o `pnpm start` nem o atalho `node_modules/.bin/tsx`: com o
+atalho, o servidor roda num processo neto, e um SIGKILL no processo que a demo
+conhece deixa o neto vivo, segurando a porta (experimento E2′ da Fase 1 da
+#16). Com `--import`, o servidor é um processo só (E1), e o PID que a demo
+conhece é o dele.
+
+O stdout e o stderr do servidor chegam à demo por pipe. O stdout continua sendo
+lido, e descartado, depois da linha de "listening": um pipe que ninguém lê
+enche, e o servidor travaria ao escrever. O stderr só aparece dentro da
+mensagem de erro, quando o servidor não fica pronto.
+
+**Prontidão.** A demo espera a linha de "listening" por até 10 s
+(`READY_TIMEOUT_MS`). Na Fase 1 da #16, em 10 medições no omarchy, a linha
+apareceu entre 586 e 732 ms depois do início; a folga é para máquinas mais
+lentas, como o runner do CI, que não foi medido. Servidor que sai antes da
+linha, ou que passa do prazo, é erro do harness; no segundo caso, a demo mata o
+servidor com SIGKILL e espera ele sair antes de parar.
+
+**Encerramento.** No fim da execução, com sucesso ou com erro, a demo manda
+SIGTERM ao servidor e espera ele sair por até 5 s (`STOP_TIMEOUT_MS`). Se ele
+não sair, manda SIGKILL, espera, e a execução termina com erro do harness. O
+servidor é encerrado **antes** de gravar o JSON: um servidor que não para dá
+código 1 sem JSON. Quando a execução já tinha falhado, o erro dela é o que
+aparece, e uma falha do encerramento é ignorada. Nos dois casos, nenhum
+processo do servidor sobra: o encerramento só termina depois de o processo
+sair.
+
+**Ctrl+C.** Aqui está só o que foi observado. No experimento E5 da Fase 1 da
+#16 (omarchy), com o servidor criado direto pelo `spawn` do Node e o stdout e o
+stderr em pipe (a configuração da demo), o Ctrl+C terminou o processo que criou
+o servidor e o próprio servidor, e nenhum processo sobrou. A cadeia completa do
+comando, `pnpm` → `tsx` → demo → servidor, **não foi testada**.
 
 ### O ciclo de um agente
 
@@ -234,10 +280,52 @@ Decidimos aceitar e documentar, em vez de mudar a forma de lançar os pushes.
    409: conta como conflito real e termina
 ```
 
+Os passos 1 a 3 não rodam em paralelo, pelo mesmo motivo do git (§3): o
+harness faz o GET, o hash e o PUT de todos os agentes, um depois do outro, antes
+de criar a barreira, e uma falha nessa fase para a execução antes de qualquer
+agente esperar. O resultado é o mesmo de pedidos simultâneos: nenhum agente
+envia changeset antes da barreira, então todos leem a mesma `main`, o changeset
+raiz.
+
+Depois da barreira, cada agente faz um único `POST /changesets`, sem nenhum
+`await` entre a liberação e o envio (`runAgent` em `demo/sprout-agents.ts`): a
+demo chama o `fetch` de todos os agentes antes de a primeira resposta chegar.
+
 O agente do Sprout **não faz retry**: quem resolve a troca de pai é o servidor,
 dentro do `POST /changesets`, no máximo uma vez por pedido e direto para a
 cabeça. O agente detecta a troca comparando o `parent` da resposta `201` com o
 que enviou, e isso entra no placar.
+
+### O registro
+
+Cada agente gera um registro no formato do §6:
+
+- `outcome`: `"accepted"` no `201`, `"conflict"` no `409`.
+- `attempts` é sempre 1 e `rejections` é sempre `{}`: um pedido por agente, sem
+  retry.
+- `reparented`: no `201`, se o `parent` da resposta é diferente do enviado; no
+  `409`, `false`.
+- `endMs`: do instante da liberação (§3) até a resposta ser lida e validada,
+  como no git.
+
+### Erro do harness
+
+Como no git (§3), estes casos são erro do harness, não métrica:
+
+- status fora do esperado (`checkStatus` em `demo/sprout-responses.ts`): `200`
+  no `GET /refs/main`, `201` ou `200` no `PUT /blobs/:hash`, `201` ou `409` no
+  `POST /changesets`;
+- corpo de resposta fora do formato: `id` que não é inteiro no
+  `GET /refs/main`, `parent` que não é inteiro no `201`, `conflicts` que não é
+  uma lista de textos não vazia no `409`, corpo que não é JSON;
+- servidor inacessível (o `fetch` falhou: conexão recusada ou reiniciada) ou que
+  morreu durante a execução;
+- servidor que não fica pronto ou não para (acima).
+
+O tratamento também é o do git: o harness espera todos os agentes terminarem
+(`Promise.allSettled`), **não grava o JSON**, escreve no stderr a mensagem de
+cada agente que falhou e sai com **código 1**. Uma falha antes da barreira para
+a execução ali, com uma mensagem só.
 
 ## 5. Os modos
 
@@ -358,9 +446,9 @@ ausente, JSON inválido, campo desconhecido ou de tipo errado, tipo de rejeiçã
 fora da lista, número de agentes diferente do cenário, agente repetido ou
 faltando. Como o arquivo fica em `demo/tmp`, o `pnpm demo:reset` também o apaga.
 
-No git, o JSON do cenário é apagado no início de cada execução (§3,
-preparação). Uma execução que para com erro do harness não deixa arquivo
-nenhum, então o placar nunca lê o resultado de uma execução anterior.
+No git e no Sprout, o JSON do cenário é apagado no início de cada execução
+(preparação do §3 e do §4). Uma execução que para com erro do harness não deixa
+arquivo nenhum, então o placar nunca lê o resultado de uma execução anterior.
 
 ### Verificação do estado final (🟡)
 
@@ -388,20 +476,22 @@ Definidos:
 ```
 pnpm demo:reset                    apaga demo/tmp; cada execução da demo recria o que precisa
 pnpm demo:git --cenario A|B|C      um cenário no git, no modo rápido
+pnpm demo:sprout --cenario A|B|C   um cenário no Sprout, no modo rápido
 ```
 
-O `demo:git` grava `demo/tmp/resultados/git-<cenário>.json` e sai com:
+O `demo:git` grava `demo/tmp/resultados/git-<cenário>.json`, e o `demo:sprout`,
+`demo/tmp/resultados/sprout-<cenário>.json`. Os dois saem com:
 
 - **0:** a execução terminou e o JSON foi gravado;
-- **1:** erro do harness (§3): mensagem no stderr, sem JSON;
+- **1:** erro do harness (§3 no git, §4 no Sprout): mensagem no stderr, sem
+  JSON;
 - **2:** cenário ausente ou inválido: mensagem no stderr.
 
 Ainda são proposta, e cada nome será definido na issue indicada:
 
 ```
 pnpm demo:git --cenario A --passo     cenário A no git, passo a passo (#17)
-pnpm demo:sprout --cenario A --passo  cenário A no Sprout, passo a passo (#16, #17)
-pnpm demo:sprout --cenario B          cenário B no Sprout, rápido (#16)
+pnpm demo:sprout --cenario A --passo  cenário A no Sprout, passo a passo (#17)
 pnpm demo:placar --cenario B          mostra os dois lado a lado (#18)
 pnpm demo:medir                       roda tudo 5 vezes e atualiza docs/resultados.md (#21)
 ```
