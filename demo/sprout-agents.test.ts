@@ -451,3 +451,26 @@ describe("decision 3: server dies during the run", () => {
     SPROUT_TIMEOUT,
   );
 });
+
+describe("summary line (#18, R11)", () => {
+  it(
+    "scenario A: the last line is the formatted summary",
+    async () => {
+      const events: string[] = [];
+      const log = (line: string): void => {
+        events.push(line);
+      };
+
+      await runSproutScenario(options(SCENARIOS.A, { log }));
+
+      // Written by hand: scenario A always gives 2 accepted, 0 rejections,
+      // 2 attempts, 1 reparent (plan of #18, R11 argument). Only the time
+      // varies.
+      expect(events.at(-1)).toMatch(
+        /^\[sprout\] resumo: aceitos 2, rejeições 0, tentativas 2, trocas de pai 1, conflitos reais 0, tempo total \d+ ms$/,
+      );
+      expect(events.filter((line) => line.includes("resumo"))).toHaveLength(1);
+    },
+    SPROUT_TIMEOUT,
+  );
+});

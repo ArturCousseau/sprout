@@ -5,6 +5,7 @@ import { HarnessError } from "./harness-error.js";
 import { type AgentResult, summarize } from "./metrics.js";
 import { resultPath, type RunResult, writeResult } from "./results.js";
 import { fileFor, type Scenario } from "./scenarios.js";
+import { formatSummaryLine } from "./scoreboard.js";
 import {
   checkStatus,
   parseAccepted,
@@ -69,7 +70,7 @@ export async function runSproutScenario({
 
   const run: RunResult = { system: "sprout", scenario: scenario.id, agents };
   await writeResult(resultsDir, run);
-  log(`[sprout] resumo ${JSON.stringify(summarize(agents))}`);
+  log(formatSummaryLine("sprout", summarize(agents)));
   return run;
 }
 

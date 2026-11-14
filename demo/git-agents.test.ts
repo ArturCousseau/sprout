@@ -431,3 +431,27 @@ describe("criterion 9: invariants", () => {
     GIT_TIMEOUT,
   );
 });
+
+describe("summary line (#18, R11)", () => {
+  it(
+    "scenario A: the last line is the formatted summary",
+    async () => {
+      const events: string[] = [];
+
+      await runGitScenario({
+        scenario: SCENARIOS.A,
+        baseDir: base,
+        resultsDir: join(base, "resultados"),
+        log: (line) => events.push(line),
+      });
+
+      // Written by hand: scenario A always gives 2 accepted, 1 rejection,
+      // 3 attempts (plan of #18, R11 argument). Only the time varies.
+      expect(events.at(-1)).toMatch(
+        /^\[git\] resumo: aceitos 2, rejeições 1, tentativas 3, trocas de pai -, conflitos reais 0, tempo total \d+ ms$/,
+      );
+      expect(events.filter((line) => line.includes("resumo"))).toHaveLength(1);
+    },
+    GIT_TIMEOUT,
+  );
+});
