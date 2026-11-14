@@ -3,8 +3,10 @@ import type { RunSummary } from "./metrics.js";
 import { SCENARIOS } from "./scenarios.js";
 import {
   formatColumn,
+  formatScoreboard,
   formatSummaryLine,
   formatTable,
+  formatTimestamp,
   scenarioTitle,
 } from "./scoreboard.js";
 
@@ -124,5 +126,51 @@ describe("formatTable (D2, R9)", () => {
       "conflitos reais        1         1",
       "tempo total        41 ms      5 ms",
     ]);
+  });
+});
+
+describe("formatTimestamp (D4, C5)", () => {
+  // Dates built with the local constructor and read with the local getters:
+  // the same in any time zone (R6). Neither falls on a DST change.
+  it("dd/mm/aaaa HH:MM", () => {
+    expect(formatTimestamp(new Date(2026, 10, 12, 23, 44))).toBe(
+      "12/11/2026 23:44",
+    );
+  });
+
+  it("pads with zeros and drops the seconds without rounding", () => {
+    expect(formatTimestamp(new Date(2026, 0, 5, 7, 3, 59))).toBe(
+      "05/01/2026 07:03",
+    );
+  });
+});
+
+describe("formatScoreboard (D2, D4)", () => {
+  it("scenario B: title, table and the time of each file", () => {
+    const text = formatScoreboard({
+      scenario: SCENARIOS.B,
+      git: gitB,
+      sprout: sproutB,
+      gitTime: new Date(2026, 10, 12, 23, 44),
+      sproutTime: new Date(2026, 10, 13, 23, 31),
+    });
+
+    // Written by hand: the scoreboard B of the plan of #18.
+    expect(text).toBe(
+      [
+        "Cenário B: 10 agentes, arquivos diferentes",
+        "",
+        "                       git    sprout",
+        "aceitos                 10        10",
+        "rejeições               45         0",
+        "tentativas              55        10",
+        "trocas de pai            -         9",
+        "conflitos reais          0         0",
+        "tempo total        1213 ms    110 ms",
+        "",
+        "resultados: git 12/11/2026 23:44, sprout 13/11/2026 23:31",
+        "",
+      ].join("\n"),
+    );
   });
 });

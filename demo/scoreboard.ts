@@ -68,3 +68,38 @@ export function formatTable(git: RunSummary, sprout: RunSummary): string[] {
     return label.padEnd(labelWidth) + values.join("");
   });
 }
+
+/**
+ * `dd/mm/aaaa HH:MM` in local time, by hand with the local getters (D4: no
+ * Intl). Seconds are dropped, not rounded.
+ */
+export function formatTimestamp(date: Date): string {
+  const two = (n: number): string => String(n).padStart(2, "0");
+  const day = `${two(date.getDate())}/${two(date.getMonth() + 1)}/${date.getFullYear()}`;
+  return `${day} ${two(date.getHours())}:${two(date.getMinutes())}`;
+}
+
+export interface ScoreboardInput {
+  scenario: Scenario;
+  git: RunSummary;
+  sprout: RunSummary;
+  /** Modification time of each result file (D4). */
+  gitTime: Date;
+  sproutTime: Date;
+}
+
+/**
+ * The whole scoreboard, ending in "\n": title, blank line, table, blank line
+ * and the "resultados:" line with each file's time (D2, D4).
+ */
+export function formatScoreboard(input: ScoreboardInput): string {
+  const times = `resultados: git ${formatTimestamp(input.gitTime)}, sprout ${formatTimestamp(input.sproutTime)}`;
+  const lines = [
+    scenarioTitle(input.scenario),
+    "",
+    ...formatTable(input.git, input.sprout),
+    "",
+    times,
+  ];
+  return `${lines.join("\n")}\n`;
+}
