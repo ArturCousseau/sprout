@@ -1,9 +1,9 @@
-import { mkdtemp, rm, utimes } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AgentResult } from "./metrics.js";
-import { type RunResult, writeResult } from "./results.js";
+import { resultPath, type RunResult, writeResult } from "./results.js";
 import { runScoreboardCli, type ScoreboardIo } from "./scoreboard-cli.js";
 
 // Fake `process`: records stdout, stderr and the exit code. exit() throws so
@@ -255,5 +255,120 @@ describe("demo:placar, exit 2 (C7)", () => {
     expect(codes).toEqual([2]);
     expect(err).toEqual([message]);
     expect(out).toEqual([]);
+  });
+});
+
+describe("demo:placar, exit 1 (C6, R7)", () => {
+  /** Runs `--cenario B` and checks exit 1, the exact stderr and no stdout. */
+  async function expectExit1(stderr: string): Promise<void> {
+    const { io, out, err, codes } = fakeIo();
+
+    const running = runScoreboardCli(["--cenario", "B"], io, {
+      resultsDir: results,
+    });
+
+    await expect(running).rejects.toThrow(ExitCalled);
+    expect(codes).toEqual([1]);
+    expect(err).toEqual([stderr]);
+    expect(out).toEqual([]);
+  }
+
+  /** Writes `text` where the git B result should be. */
+  async function plantGitText(text: string): Promise<string> {
+    await mkdir(results, { recursive: true });
+    const path = resultPath(results, "git", "B");
+    await writeFile(path, text);
+    return path;
+  }
+
+  it("git file missing → its path and demo:git", async () => {
+    await writeResult(results, sproutB);
+    const gitPath = resultPath(results, "git", "B");
+
+    await expectExit1(
+      `demo:placar: result file not found: ${gitPath} (rode pnpm demo:git --cenario B)\n`,
+    );
+  });
+
+  it("sprout file missing → its path and demo:sprout", async () => {
+    await writeResult(results, gitB);
+    const sproutPath = resultPath(results, "sprout", "B");
+
+    await expectExit1(
+      `demo:placar: result file not found: ${sproutPath} (rode pnpm demo:sprout --cenario B)\n`,
+    );
+  });
+
+  it("both missing → one line per file, prefix once (R7, P1)", async () => {
+    const gitPath = resultPath(results, "git", "B");
+    const sproutPath = resultPath(results, "sprout", "B");
+
+    await expectExit1(
+      `demo:placar: result file not found: ${gitPath} (rode pnpm demo:git --cenario B)\n` +
+        `result file not found: ${sproutPath} (rode pnpm demo:sprout --cenario B)\n`,
+    );
+  });
+
+  it.each([
+    [
+      "broken JSON",
+      '{"system": "git", ',
+      (path: string) => `invalid JSON in ${path}`,
+    ],
+    [
+      "wrong system",
+      JSON.stringify({ ...gitB, system: "sprout" }),
+      (path: string) => `${path}: system must be "git"`,
+    ],
+    [
+      "reparented true in git (R4)",
+      JSON.stringify({
+        ...gitB,
+        agents: gitB.agents.map((a) =>
+          a.agent === 1 ? { ...a, reparented: true } : a,
+        ),
+      }),
+      (path: string) => `${path}: agents[0].reparented must be null in git`,
+    ],
+  ])(
+    "invalid git file (%s) → readResult's message",
+    async (_label, text, message) => {
+      await writeResult(results, sproutB);
+      const gitPath = await plantGitText(text);
+
+      await expectExit1(
+        `demo:placar: ${message(gitPath)} (rode pnpm demo:git --cenario B)\n`,
+      );
+    },
+  );
+
+  it("unreadable git file (EISDIR) → readResult's message", async () => {
+    await writeResult(results, sproutB);
+    const gitPath = resultPath(results, "git", "B");
+    await mkdir(gitPath, { recursive: true });
+
+    await expectExit1(
+      `demo:placar: cannot read result file ${gitPath} (rode pnpm demo:git --cenario B)\n`,
+    );
+  });
+});
+
+describe("demo:placar, other errors (C8, R3)", () => {
+  it("an error that is not a ResultFileError is rethrown, not exit 1", async () => {
+    await plant(gitB, sproutB);
+    const { io, err, codes } = fakeIo();
+    // A plain Error standing in for a bug, thrown inside the guarded stretch.
+    io.stdout.write = () => {
+      throw new Error("stdout broke");
+    };
+
+    const running = runScoreboardCli(["--cenario", "B"], io, {
+      resultsDir: results,
+    });
+
+    await expect(running).rejects.toThrow("stdout broke");
+    await expect(running).rejects.not.toBeInstanceOf(ExitCalled);
+    expect(codes).toEqual([]);
+    expect(err).toEqual([]);
   });
 });
