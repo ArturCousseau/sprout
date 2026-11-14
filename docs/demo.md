@@ -357,25 +357,40 @@ o modo rápido.
 
 Os N agentes rodam em paralelo, com o ponto de sincronização. A saída mostra uma
 linha por evento (pode rolar rápido, é o efeito desejado) e termina com o
-resumo daquele sistema.
+resumo daquele sistema, com os mesmos rótulos e valores do placar (§6). O
+formato é este (os números variam de uma execução para outra):
+
+```
+[git] resumo: aceitos 10, rejeições 45, tentativas 55, trocas de pai -, conflitos reais 0, tempo total 1047 ms
+```
 
 ## 6. O placar
 
-Aparece no final, com os dois sistemas lado a lado:
+Aparece no final, com os dois sistemas lado a lado. Saída de
+`pnpm demo:placar --cenario B`:
 
 ```
 Cenário B: 10 agentes, arquivos diferentes
 
-                    git       sprout
-aceitos              10           10
-rejeições            23            0
-tentativas           33           10
-trocas de pai         -            9
-conflitos reais       0            0
-tempo total        4,1 s        0,3 s
+                       git    sprout
+aceitos                 10        10
+rejeições               45         0
+tentativas              55        10
+trocas de pai            -         9
+conflitos reais          0         0
+tempo total        1047 ms     93 ms
+
+resultados: git 14/11/2026 12:45, sprout 14/11/2026 12:45
 ```
 
-_(números ilustrativos; os reais vêm da medição)_
+_(uma execução no omarchy em 14/11/2026; a média de várias execuções é a
+#21)_
+
+O placar só lê os dois arquivos de resultados (abaixo) e calcula cada coluna
+com o `summarize`: não roda git nem sobe servidor. O tempo total sai em
+milissegundos inteiros, arredondado. A última linha traz a data de modificação
+de cada arquivo, em hora local, para o apresentador ver se as duas execuções
+são da mesma rodada.
 
 ### Definição de cada métrica
 
@@ -443,12 +458,18 @@ Exemplo ilustrativo do cenário A no git:
 A leitura (`readResult` em `demo/results.ts`) confere a forma campo a campo e
 falha com uma mensagem que nomeia o arquivo e, quando é o caso, o campo: arquivo
 ausente, JSON inválido, campo desconhecido ou de tipo errado, tipo de rejeição
-fora da lista, número de agentes diferente do cenário, agente repetido ou
-faltando. Como o arquivo fica em `demo/tmp`, o `pnpm demo:reset` também o apaga.
+fora da lista, `reparented` diferente de `null` no git ou diferente de booleano
+no Sprout, número de agentes diferente do cenário, agente repetido ou faltando.
+Como o arquivo fica em `demo/tmp`, o `pnpm demo:reset` também o apaga.
 
 No git e no Sprout, o JSON do cenário é apagado no início de cada execução
 (preparação do §3 e do §4). Uma execução que para com erro do harness não deixa
-arquivo nenhum, então o placar nunca lê o resultado de uma execução anterior.
+arquivo nenhum, então o placar nunca lê um resultado antigo do mesmo sistema
+depois de uma execução que falhou. Mas os dois arquivos são independentes: se
+só um dos sistemas rodou de novo, o placar junta um resultado novo com um
+antigo (por exemplo, um `git-B.json` de ontem com um `sprout-B.json` de hoje).
+Por isso ele mostra a data de cada arquivo, e não recusa datas diferentes: o
+apresentador decide.
 
 ### Verificação do estado final (🟡)
 
@@ -477,6 +498,7 @@ Definidos:
 pnpm demo:reset                    apaga demo/tmp; cada execução da demo recria o que precisa
 pnpm demo:git --cenario A|B|C      um cenário no git, no modo rápido
 pnpm demo:sprout --cenario A|B|C   um cenário no Sprout, no modo rápido
+pnpm demo:placar --cenario A|B|C   o placar do cenário, git e Sprout lado a lado
 ```
 
 O `demo:git` grava `demo/tmp/resultados/git-<cenário>.json`, e o `demo:sprout`,
@@ -487,12 +509,19 @@ O `demo:git` grava `demo/tmp/resultados/git-<cenário>.json`, e o `demo:sprout`,
   JSON;
 - **2:** cenário ausente ou inválido: mensagem no stderr.
 
+O `demo:placar` lê esses dois arquivos e não grava nada (§6). Sai com:
+
+- **0:** o placar foi impresso no stdout;
+- **1:** um dos arquivos está ausente, ilegível ou inválido: uma linha no
+  stderr para cada arquivo com problema, com o caminho e o comando que o gera
+  (por exemplo, `rode pnpm demo:git --cenario B`), e nada no stdout;
+- **2:** cenário ausente ou inválido: mensagem no stderr.
+
 Ainda são proposta, e cada nome será definido na issue indicada:
 
 ```
 pnpm demo:git --cenario A --passo     cenário A no git, passo a passo (#17)
 pnpm demo:sprout --cenario A --passo  cenário A no Sprout, passo a passo (#17)
-pnpm demo:placar --cenario B          mostra os dois lado a lado (#18)
 pnpm demo:medir                       roda tudo 5 vezes e atualiza docs/resultados.md (#21)
 ```
 
