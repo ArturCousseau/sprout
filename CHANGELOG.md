@@ -46,6 +46,18 @@ para a issue e para o PR de onde veio. O processo de release está no
   ciclo, o registro e o comando
   ([#16](https://github.com/ArturCousseau/sprout/issues/16),
   [#43](https://github.com/ArturCousseau/sprout/pull/43)).
+- Placar da demo: `pnpm demo:placar --cenario A|B|C` lê os JSONs do git e do
+  Sprout e mostra os dois lado a lado (aceitos, rejeições, tentativas, trocas
+  de pai, conflitos reais e tempo total em ms inteiros), com a data de
+  modificação de cada arquivo. Sai com 1 quando um arquivo está ausente,
+  ilegível ou inválido (uma linha por arquivo, com o comando que o gera) e
+  com 2 para cenário inválido. O `readResult` passa a lançar
+  `ResultFileError` e a exigir `reparented: null` no git e booleano no
+  Sprout. As linhas `[git] resumo` e `[sprout] resumo` deixam o JSON cru e
+  usam os rótulos do placar. O `docs/demo.md` traz uma saída real do placar
+  e os códigos de saída
+  ([#18](https://github.com/ArturCousseau/sprout/issues/18),
+  [#44](https://github.com/ArturCousseau/sprout/pull/44)).
 
 ### Alterado
 

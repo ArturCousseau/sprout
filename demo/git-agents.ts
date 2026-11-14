@@ -15,6 +15,7 @@ import { HarnessError } from "./harness-error.js";
 import { type AgentResult, type RejectionType, summarize } from "./metrics.js";
 import { resultPath, type RunResult, writeResult } from "./results.js";
 import { fileFor, type Scenario } from "./scenarios.js";
+import { formatSummaryLine } from "./scoreboard.js";
 
 /** What one git command produced. */
 export interface GitRun {
@@ -220,7 +221,7 @@ export async function runGitScenario({
   }
   const run: RunResult = { system: "git", scenario: scenario.id, agents };
   await writeResult(resultsDir, run);
-  log(`[git] resumo ${JSON.stringify(summarize(agents))}`);
+  log(formatSummaryLine("git", summarize(agents)));
   return run;
 }
 

@@ -1,9 +1,17 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type AgentResult, REJECTION_TYPES } from "./metrics.js";
 import { SCENARIOS, type ScenarioId } from "./scenarios.js";
 
 export type System = "git" | "sprout";
+
+/**
+ * A result file is missing, unreadable or invalid (R1 of #18). The scoreboard
+ * turns only this error into exit code 1; any other error is a bug.
+ */
+export class ResultFileError extends Error {
+  override name = "ResultFileError";
+}
 
 /** Everything one run produced; the scoreboard is computed from it (D5). */
 export interface RunResult {
@@ -51,21 +59,39 @@ export async function readResult(
     text = await readFile(path, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new Error(`result file not found: ${path}`, { cause: error });
+      throw new ResultFileError(`result file not found: ${path}`, {
+        cause: error,
+      });
     }
-    throw new Error(`cannot read result file ${path}`, { cause: error });
+    throw new ResultFileError(`cannot read result file ${path}`, {
+      cause: error,
+    });
   }
   let data: unknown;
   try {
     data = JSON.parse(text);
   } catch (error) {
-    throw new Error(`invalid JSON in ${path}`, { cause: error });
+    throw new ResultFileError(`invalid JSON in ${path}`, { cause: error });
   }
   const problem = checkRunResult(data, system, scenario);
   if (problem !== null) {
-    throw new Error(`${path}: ${problem}`);
+    throw new ResultFileError(`${path}: ${problem}`);
   }
   return data as RunResult;
+}
+
+/**
+ * Modification time of a result file, for the scoreboard's "resultados:"
+ * line (D4, R5). A failure is a ResultFileError, like readResult's.
+ */
+export async function readMtime(path: string): Promise<Date> {
+  try {
+    return (await stat(path)).mtime;
+  } catch (error) {
+    throw new ResultFileError(`cannot read modification time of ${path}`, {
+      cause: error,
+    });
+  }
 }
 
 const OUTCOMES = new Set(["accepted", "conflict"]);
@@ -155,8 +181,12 @@ function checkRunResult(
         return `${at}.rejections["${type}"] must be a non-negative integer`;
       }
     }
-    if (agent.reparented !== null && typeof agent.reparented !== "boolean") {
-      return `${at}.reparented must be a boolean or null`;
+    // git never reparents (null); Sprout always says whether it did (R4).
+    if (system === "git" && agent.reparented !== null) {
+      return `${at}.reparented must be null in git`;
+    }
+    if (system === "sprout" && typeof agent.reparented !== "boolean") {
+      return `${at}.reparented must be a boolean in sprout`;
     }
     if (
       typeof agent.endMs !== "number" ||
