@@ -150,6 +150,24 @@ async function configure(
   }
 }
 
+/**
+ * Each agent writes its file (`fileFor`) with "agente N" and commits it in
+ * its clone, one agent after the other. `clones[i]` is agent i + 1's clone.
+ * Used by the fast mode and by the step-by-step mode (#17).
+ */
+export async function commitAgents(
+  scenario: Scenario,
+  clones: string[],
+): Promise<void> {
+  for (const [index, clone] of clones.entries()) {
+    const agent = index + 1;
+    const file = fileFor(scenario, agent);
+    await writeFile(join(clone, file), `agente ${agent}\n`);
+    await gitOk(["-C", clone, "add", file]);
+    await gitOk(["-C", clone, "commit", "-q", "-m", `agente ${agent}`]);
+  }
+}
+
 export interface RunGitScenarioOptions extends PrepareGitRunOptions {
   /** Where the event lines go (D7). Tests pass a silent one. */
   log?: (line: string) => void;
@@ -183,13 +201,7 @@ export async function runGitScenario({
   // Every agent's commit, one after the other, before the barrier exists: a
   // commit that fails here throws before any agent waits, so no agent is left
   // waiting forever for an arrival that never comes.
-  for (const [index, clone] of clones.entries()) {
-    const agent = index + 1;
-    const file = fileFor(scenario, agent);
-    await writeFile(join(clone, file), `agente ${agent}\n`);
-    await gitOk(["-C", clone, "add", file]);
-    await gitOk(["-C", clone, "commit", "-q", "-m", `agente ${agent}`]);
-  }
+  await commitAgents(scenario, clones);
 
   // The concurrent part starts here.
   const barrier = createBarrier(scenario.agents);
