@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ExitIo } from "./scenarios.js";
 import type { SproutFetch } from "./sprout-agents.js";
@@ -81,8 +82,31 @@ function options(extra: Partial<SproutCliOptions> = {}): SproutCliOptions {
     resultsDir: join(base, "resultados"),
     log: () => {},
     startServer: capture,
+    input: new PassThrough(),
     ...extra,
   };
+}
+
+/** The one server the run started. */
+function onlyServer(): SproutServer {
+  expect(started).toHaveLength(1);
+  return started[0];
+}
+
+const STOPPED_BY_SIGTERM = { code: null, signal: "SIGTERM" };
+
+/** An input with `text` already written and still open, like a terminal. */
+function typed(text: string): PassThrough {
+  const input = new PassThrough();
+  input.write(text);
+  return input;
+}
+
+/** An input that already ended, after `text`. */
+function ended(text: string): PassThrough {
+  const input = new PassThrough();
+  input.end(text);
+  return input;
 }
 
 /** Real fetch, except that every GET gets a 500. */
@@ -141,6 +165,92 @@ describe("criterion 1: demo:sprout exit codes", () => {
       expect(written[0]).toContain("demo:sprout: ");
       expect(written[0]).toContain("unexpected status 500 for getMain");
       expect(existsSync(join(base, "resultados", "sprout-A.json"))).toBe(false);
+    },
+    SPROUT_TIMEOUT,
+  );
+});
+
+describe("demo:sprout --passo (#17)", () => {
+  it(
+    "A --passo after a fast A → exit 0 and no JSON (D6)",
+    async () => {
+      const json = join(base, "resultados", "sprout-A.json");
+      const fast = fakeIo();
+      await expect(
+        runSproutCli(["--cenario", "A"], fast.io, options()),
+      ).rejects.toThrow(ExitCalled);
+      expect(fast.codes).toEqual([0]);
+      expect(existsSync(json)).toBe(true);
+
+      const { io, written, codes } = fakeIo();
+      const running = runSproutCli(
+        ["--cenario", "A", "--passo"],
+        io,
+        options({ input: typed("\n".repeat(3)) }),
+      );
+
+      await expect(running).rejects.toThrow(ExitCalled);
+      expect(codes).toEqual([0]);
+      expect(written).toEqual([]);
+      expect(existsSync(json)).toBe(false);
+    },
+    SPROUT_TIMEOUT,
+  );
+
+  it(
+    "C --passo → exit 0",
+    async () => {
+      const { io, written, codes } = fakeIo();
+
+      const running = runSproutCli(
+        ["--cenario", "C", "--passo"],
+        io,
+        options({ input: typed("\n".repeat(3)) }),
+      );
+
+      await expect(running).rejects.toThrow(ExitCalled);
+      expect(codes).toEqual([0]);
+      expect(written).toEqual([]);
+    },
+    SPROUT_TIMEOUT,
+  );
+
+  it("B --passo → exit 2 with the R2 message, nothing ran", async () => {
+    const { io, written, codes } = fakeIo();
+
+    const running = runSproutCli(["--cenario", "B", "--passo"], io, options());
+
+    await expect(running).rejects.toThrow(ExitCalled);
+    expect(codes).toEqual([2]);
+    expect(written).toEqual(["--passo só existe nos cenários A e C\n"]);
+    expect(started).toEqual([]);
+    expect(await readdir(base)).toEqual([]);
+  });
+
+  it.each([
+    ["already ended", ""],
+    ["ended after one Enter", "\n"],
+  ])(
+    "input %s → exit 1, server stopped and port closed (D7, R14)",
+    async (_label, text) => {
+      const { io, written, codes } = fakeIo();
+
+      const running = runSproutCli(
+        ["--cenario", "A", "--passo"],
+        io,
+        options({ input: ended(text) }),
+      );
+
+      await expect(running).rejects.toThrow(ExitCalled);
+      expect(codes).toEqual([1]);
+      expect(written).toEqual([
+        "demo:sprout: stdin closed during a pause (Enter expected)\n",
+      ]);
+      const server = onlyServer();
+      expect(await settledValue(server.exited)).toEqual(STOPPED_BY_SIGTERM);
+      await expect(fetch(`${server.url}/refs/main`)).rejects.toThrow(
+        "fetch failed",
+      );
     },
     SPROUT_TIMEOUT,
   );
