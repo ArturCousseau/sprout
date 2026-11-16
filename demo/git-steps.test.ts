@@ -1,0 +1,184 @@
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { gitOk } from "./git-agents.js";
+import { runGitSteps } from "./git-steps.js";
+import { SCENARIOS } from "./scenarios.js";
+
+/** Real git and several clones: slower than the default 5 s on a busy CI. */
+const GIT_TIMEOUT = 60_000;
+
+/** Teto de colunas de uma linha do passo a passo (P2 do plano da #17). */
+const MAX_COLUMNS = 105;
+
+let base: string;
+let results: string;
+
+beforeEach(async () => {
+  base = await mkdtemp(join(tmpdir(), "sprout-git-steps-"));
+  results = join(base, "resultados");
+});
+
+afterEach(async () => {
+  await rm(base, { recursive: true, force: true });
+});
+
+/** Trimmed stdout of a git command that must succeed. */
+async function git(args: string[]): Promise<string> {
+  return (await gitOk(args)).trim();
+}
+
+/** Short hash of `rev` in the central repository, read by the test itself. */
+function central(rev: string): Promise<string> {
+  return git(["-C", join(base, "central.git"), "rev-parse", "--short=7", rev]);
+}
+
+/**
+ * Records the event lines, and for each pause how many lines had been
+ * printed when it was called. The pause itself returns at once.
+ */
+function recorder() {
+  const events: string[] = [];
+  const pausedAt: number[] = [];
+  return {
+    events,
+    pausedAt,
+    log: (line: string): void => {
+      events.push(line);
+    },
+    pause: (): Promise<void> => {
+      pausedAt.push(events.length);
+      return Promise.resolve();
+    },
+  };
+}
+
+describe("runGitSteps: lines (#17, D3, D5)", () => {
+  it(
+    "scenario A: the five lines of §5, with the hashes of the central repo",
+    async () => {
+      const { events, log, pause } = recorder();
+
+      await runGitSteps({
+        scenario: SCENARIOS.A,
+        baseDir: base,
+        resultsDir: results,
+        log,
+        pause,
+      });
+
+      // Checked before reading the central repo, which may not exist.
+      expect(events).toHaveLength(5);
+      // initial commit ← agent 1 ← agent 2 (rebased)
+      expect(
+        await git([
+          "-C",
+          join(base, "central.git"),
+          "rev-list",
+          "--count",
+          "main",
+        ]),
+      ).toBe("3");
+      const initial = await central("main~2");
+      const first = await central("main~1");
+      const last = await central("main");
+      expect(events).toEqual([
+        "[git] cenário A, passo a passo: Enter antes de cada etapa",
+        `[git] agente 1 e agente 2 partem da main no commit ${initial}`,
+        `[git] agente 1: push                    → aceito, main = ${first}`,
+        "[git] agente 2: push                    → REJEITADO (a main andou; o git não olha os arquivos)",
+        `[git] agente 2: pull --rebase + push    → aceito, main = ${last}`,
+      ]);
+      expect(events.filter((line) => line.length > MAX_COLUMNS)).toEqual([]);
+    },
+    GIT_TIMEOUT,
+  );
+
+  it(
+    "scenario C: the conflict line, and agent 2's rebase aborted",
+    async () => {
+      const { events, log, pause } = recorder();
+
+      await runGitSteps({
+        scenario: SCENARIOS.C,
+        baseDir: base,
+        resultsDir: results,
+        log,
+        pause,
+      });
+
+      // Checked before reading the central repo, which may not exist.
+      expect(events).toHaveLength(5);
+      // initial commit ← agent 1; agent 2 never got in
+      expect(
+        await git([
+          "-C",
+          join(base, "central.git"),
+          "rev-list",
+          "--count",
+          "main",
+        ]),
+      ).toBe("2");
+      const initial = await central("main~1");
+      const first = await central("main");
+      expect(events).toEqual([
+        "[git] cenário C, passo a passo: Enter antes de cada etapa",
+        `[git] agente 1 e agente 2 partem da main no commit ${initial}`,
+        `[git] agente 1: push                    → aceito, main = ${first}`,
+        "[git] agente 2: push                    → REJEITADO (a main andou; o git não olha os arquivos)",
+        `[git] agente 2: pull --rebase           → CONFLITO em conflito.txt; rebase --abort, main = ${first}`,
+      ]);
+      expect(events.filter((line) => line.length > MAX_COLUMNS)).toEqual([]);
+      const clone = join(base, "git-agente-2");
+      expect(await git(["-C", clone, "status", "--porcelain"])).toBe("");
+      expect(existsSync(join(clone, ".git", "rebase-merge"))).toBe(false);
+    },
+    GIT_TIMEOUT,
+  );
+});
+
+describe("runGitSteps: pauses (#17, D4, R9)", () => {
+  it.each(["A", "C"] as const)(
+    "scenario %s: one pause before each step, the first included, none after the last",
+    async (id) => {
+      const { pausedAt, log, pause } = recorder();
+
+      await runGitSteps({
+        scenario: SCENARIOS[id],
+        baseDir: base,
+        resultsDir: results,
+        log,
+        pause,
+      });
+
+      // Lines already printed at each pause: the header, then one per step.
+      expect(pausedAt).toEqual([1, 2, 3, 4]);
+    },
+    GIT_TIMEOUT,
+  );
+});
+
+describe("runGitSteps: no result file (#17, D6)", () => {
+  it(
+    "the old git-A.json is deleted and no new one is written",
+    async () => {
+      const { log, pause } = recorder();
+      await mkdir(results);
+      const json = join(results, "git-A.json");
+      await writeFile(json, "{}\n");
+
+      await runGitSteps({
+        scenario: SCENARIOS.A,
+        baseDir: base,
+        resultsDir: results,
+        log,
+        pause,
+      });
+
+      expect(existsSync(json)).toBe(false);
+    },
+    GIT_TIMEOUT,
+  );
+});
