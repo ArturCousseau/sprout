@@ -70,6 +70,21 @@ describe("createLinePause (#17, D4, D7)", () => {
     await expect(waiting).rejects.toThrow(CLOSED);
   });
 
+  it("a line kept before the input ended → the first pause resolves, the next one fails", async () => {
+    const input = new PassThrough();
+    const lines = createLinePause(input);
+
+    // The readline reads the input and closes on its "end"; this listener is
+    // added after the readline's, so the close has happened when it runs.
+    input.end("\n");
+    await once(input, "end");
+
+    await expect(lines.pause()).resolves.toBeUndefined();
+    const next = lines.pause();
+    await expect(next).rejects.toBeInstanceOf(HarnessError);
+    await expect(next).rejects.toThrow(CLOSED);
+  });
+
   it("two lines at once count as two pauses (P1)", async () => {
     const input = new PassThrough();
     const lines = createLinePause(input);
