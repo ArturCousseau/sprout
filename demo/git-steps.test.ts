@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { gitOk } from "./git-agents.js";
-import { runGitSteps } from "./git-steps.js";
+import { expectFetchFirst, runGitSteps } from "./git-steps.js";
+import { identityGitConfig } from "./git.js";
+import { HarnessError } from "./harness-error.js";
 import { SCENARIOS } from "./scenarios.js";
 
 /** Real git and several clones: slower than the default 5 s on a busy CI. */
@@ -181,4 +183,58 @@ describe("runGitSteps: no result file (#17, D6)", () => {
     },
     GIT_TIMEOUT,
   );
+});
+
+describe("runGitSteps: checked against the script (#17, D3, R8)", () => {
+  it(
+    "another push before step 2 → HarnessError, no step 2 line (D8)",
+    async () => {
+      const events: string[] = [];
+      let calls = 0;
+      // The second pause runs a real push from a third clone before it lets
+      // step 2 go: agent 1's push then really is rejected.
+      const pause = async (): Promise<void> => {
+        calls += 1;
+        if (calls !== 2) return;
+        const intruder = join(base, "intruso");
+        await gitOk(["clone", "-q", join(base, "central.git"), intruder]);
+        for (const [key, value] of identityGitConfig("intruso")) {
+          await gitOk(["-C", intruder, "config", key, value]);
+        }
+        await writeFile(join(intruder, "intruso.txt"), "intruso\n");
+        await gitOk(["-C", intruder, "add", "intruso.txt"]);
+        await gitOk(["-C", intruder, "commit", "-q", "-m", "intruso"]);
+        await gitOk(["-C", intruder, "push", "-q", "origin", "main"]);
+      };
+
+      const running = runGitSteps({
+        scenario: SCENARIOS.A,
+        baseDir: base,
+        resultsDir: results,
+        log: (line) => events.push(line),
+        pause,
+      });
+
+      await expect(running).rejects.toBeInstanceOf(HarnessError);
+      await expect(running).rejects.toThrow(
+        "step 2 (agente 1: push): expected accepted, got fetch-first",
+      );
+      expect(events).toHaveLength(2); // header and step 1, nothing of step 2
+      expect(calls).toBe(2);
+    },
+    GIT_TIMEOUT,
+  );
+});
+
+describe("expectFetchFirst: agent 2's push (#17, R6)", () => {
+  it.each(["ref-lock", "accepted"] as const)("%s → HarnessError", (result) => {
+    expect(() => expectFetchFirst(result)).toThrow(HarnessError);
+    expect(() => expectFetchFirst(result)).toThrow(
+      `step 3 (agente 2: push): expected fetch-first, got ${result}`,
+    );
+  });
+
+  it("fetch-first → no error", () => {
+    expect(() => expectFetchFirst("fetch-first")).not.toThrow();
+  });
 });
