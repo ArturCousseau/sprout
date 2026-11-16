@@ -256,6 +256,20 @@ describe("demo:placar, exit 2 (C7)", () => {
     expect(err).toEqual([message]);
     expect(out).toEqual([]);
   });
+
+  it("--passo is not a scoreboard option (#17, R1) → exit 2", async () => {
+    const { io, out, err, codes } = fakeIo();
+
+    const running = runScoreboardCli(["--cenario", "A", "--passo"], io, {
+      resultsDir: results,
+    });
+
+    await expect(running).rejects.toThrow(ExitCalled);
+    expect(codes).toEqual([2]);
+    expect(err).toHaveLength(1);
+    expect(err[0]).toMatch(/--passo/);
+    expect(out).toEqual([]);
+  });
 });
 
 describe("demo:placar, exit 1 (C6, R7)", () => {
