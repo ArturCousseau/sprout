@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { HarnessError } from "./harness-error.js";
 import { SCENARIOS, type Scenario } from "./scenarios.js";
 import {
   type SproutServer,
@@ -19,6 +20,10 @@ const SPROUT_TIMEOUT = 30_000;
 const MAX_COLUMNS = 105;
 
 const STOPPED_BY_SIGTERM = { code: null, signal: "SIGTERM" };
+
+// Written by hand with `printf 'intruso\n' | sha256sum`, not with hashContent.
+const H_INTRUSO =
+  "0e887d039f4d1e14760d8eb7eb891f53e52495b5ca9a649d24f4bd1dc8a364ec";
 
 let base: string;
 let started: SproutServer[];
@@ -170,6 +175,58 @@ describe("runSproutSteps: success (#17, D6, R5 of #16)", () => {
         "fetch failed",
       );
       expect(existsSync(json)).toBe(false);
+    },
+    SPROUT_TIMEOUT,
+  );
+});
+
+describe("runSproutSteps: checked against the script (#17, D3, R8)", () => {
+  it(
+    "another changeset before step 2 → HarnessError, no step 2 line, server stopped (D8)",
+    async () => {
+      const events: string[] = [];
+      let calls = 0;
+      // The second pause sends, as another author, a changeset on parent 1
+      // before it lets step 2 go: agent 1's changeset then really is
+      // reparented.
+      const pause = async (): Promise<void> => {
+        calls += 1;
+        if (calls !== 2) return;
+        const { url } = onlyServer();
+        const put = await fetch(`${url}/blobs/${H_INTRUSO}`, {
+          method: "PUT",
+          headers: { "content-type": "application/octet-stream" },
+          body: "intruso\n",
+        });
+        expect(put.status).toBe(201);
+        const post = await fetch(`${url}/changesets`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            parent: 1,
+            author: "intruso",
+            message: "intruso",
+            changes: [{ path: "intruso.txt", blobHash: H_INTRUSO }],
+          }),
+        });
+        expect(post.status).toBe(201);
+      };
+
+      const running = runSproutSteps(
+        options(SCENARIOS.A, { log: (line) => events.push(line), pause }),
+      );
+
+      await expect(running).rejects.toBeInstanceOf(HarnessError);
+      await expect(running).rejects.toThrow(
+        "step 2 (agente 1: envia changeset): expected accepted on parent 1, got parent changed to 2",
+      );
+      expect(events).toHaveLength(2); // header and step 1, nothing of step 2
+      expect(calls).toBe(2);
+      const server = onlyServer();
+      expect(await settledValue(server.exited)).toEqual(STOPPED_BY_SIGTERM);
+      await expect(fetch(`${server.url}/refs/main`)).rejects.toThrow(
+        "fetch failed",
+      );
     },
     SPROUT_TIMEOUT,
   );
