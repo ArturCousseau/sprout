@@ -9,7 +9,10 @@ export interface Scenario {
   sameFile: boolean;
 }
 
-/** Same table as docs/demo.md §2. The mode (step by step or fast) is #17. */
+/**
+ * Same table as docs/demo.md §2. The mode comes from `--passo`
+ * (parseRunArgs): A and C run step by step or fast, B only fast (#17, R2).
+ */
 export const SCENARIOS: Record<ScenarioId, Scenario> = {
   A: { id: "A", agents: 2, sameFile: false },
   B: { id: "B", agents: 10, sameFile: false },
