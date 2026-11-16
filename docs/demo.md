@@ -265,8 +265,30 @@ sair.
 **Ctrl+C.** Aqui está só o que foi observado. No experimento E5 da Fase 1 da
 #16 (omarchy), com o servidor criado direto pelo `spawn` do Node e o stdout e o
 stderr em pipe (a configuração da demo), o Ctrl+C terminou o processo que criou
-o servidor e o próprio servidor, e nenhum processo sobrou. A cadeia completa do
-comando, `pnpm` → `tsx` → demo → servidor, **não foi testada**.
+o servidor e o próprio servidor, e nenhum processo sobrou. No modo rápido, a
+cadeia completa do comando, `pnpm` → `tsx` → demo → servidor, **não foi
+testada** (a execução termina antes de dar tempo).
+
+No passo a passo (§5), a cadeia completa foi testada, porque a demo fica parada
+esperando o Enter. A pausa lê o stdin com o `readline` em `terminal: false`, sem
+handler de `SIGINT`. No experimento E3 da Fase 1 da #17 (omarchy, num
+pseudo-terminal, node 26.12.0), com o padrão (`terminal: true` quando o stdout
+é um terminal), o `readline` liga o modo raw. O Ctrl+C vira uma tecla, não gera
+sinal, e a demo fica pendurada com o servidor vivo. Com `false`, o terminal
+fica no modo normal e o Ctrl+C manda SIGINT para o grupo inteiro: o `pnpm`, a
+demo e o servidor morrem pelo sinal, nenhum processo sobra e a porta fecha.
+Nenhum teste automático vê isso (no vitest o stdin nunca é um terminal). A
+verificação manual da #17, no zsh do omarchy com node 26.13.0, confirmou com o
+comando da apresentação: Ctrl+C numa pausa do
+`pnpm demo:sprout --cenario A --passo` e do
+`pnpm demo:git --cenario C --passo`, o shell mostra o fim por SIGINT e nenhum
+`tsx`, servidor ou `git` sobra. Com o servidor morto pelo sinal, o
+encerramento acima (SIGTERM, espera de 5 s) não roda. Se o stdin fecha numa
+pausa, a execução para com erro do harness, encerra o servidor normalmente e
+sai com código 1 (§8). Um caso fica sem tratamento na demo: um SIGKILL no
+processo do `tsx` deixa a demo e o servidor órfãos, com o servidor ainda
+respondendo (E5b da Fase 1 da #17). O `tsx` não leva o neto junto, e nenhum
+código da demo roda depois de um SIGKILL. Isso vai para o README (#23).
 
 ### O ciclo de um agente
 
@@ -331,23 +353,73 @@ a execução ali, com uma mensagem só.
 
 ### Passo a passo (cenários A e C)
 
-O script pausa antes de cada etapa e espera um **Enter** do apresentador. Cada
-etapa imprime uma linha curta e legível:
+`pnpm demo:git --cenario A|C --passo` e
+`pnpm demo:sprout --cenario A|C --passo` (#17). A preparação roda logo no
+início, sem pausa e sem linha própria: no git, os repositórios e os commits
+dos dois agentes (§3); no Sprout, o servidor e o `GET` e o `PUT` de cada
+agente (§4). Depois vem um cabeçalho, e o script pausa antes de cada etapa,
+inclusive a primeira, esperando um **Enter** do apresentador. Depois da última
+etapa não há pausa: a execução termina. Cada etapa é uma operação real e
+imprime uma linha, com o porquê dentro dela. Os valores vêm da autoridade: no
+git, o hash de 7 caracteres da `main` do repositório central
+(`git rev-parse --short=7`); no Sprout, o id da `main` lido com
+`GET /refs/main` depois de cada etapa. Os hashes abaixo são exemplos.
+
+Cenário A no git:
 
 ```
-[git] agente A e agente B partem da main no commit 3f2a1c
-[git] agente A: push                               → aceito, main = 9b81e0
-[git] agente B: push                               → REJEITADO (a main andou)
-[git] agente B: pull --rebase + push               → aceito, main = 4c7d22
+[git] cenário A, passo a passo: Enter antes de cada etapa
+[git] agente 1 e agente 2 partem da main no commit 3f2a1c9
+[git] agente 1: push                    → aceito, main = 9b81e04
+[git] agente 2: push                    → REJEITADO (a main andou; o git não olha os arquivos)
+[git] agente 2: pull --rebase + push    → aceito, main = 4c7d22a
 ```
 
+No cenário C, a última linha do git é o conflito real, com o `rebase --abort`
+(§3):
+
 ```
-[sprout] agente A e agente B partem da main no changeset 1
-[sprout] agente A: envia changeset (pai = 1)       → aceito, main = 2
-[sprout] agente B: envia changeset (pai = 1)       → a main andou; arquivos diferentes;
-                                                     o servidor troca o pai para 2
-                                                   → aceito, main = 3
+[git] agente 2: pull --rebase           → CONFLITO em conflito.txt; rebase --abort, main = 9b81e04
 ```
+
+Cenário A no Sprout:
+
+```
+[sprout] cenário A, passo a passo: Enter antes de cada etapa
+[sprout] agente 1 e agente 2 partem da main no changeset 1
+[sprout] agente 1: envia changeset (pai = 1)    → aceito, main = 2
+[sprout] agente 2: envia changeset (pai = 1)    → aceito, pai trocado para 2 (outro arquivo), main = 3
+```
+
+No cenário C, a última linha do Sprout é o `409`:
+
+```
+[sprout] agente 2: envia changeset (pai = 1)    → CONFLITO (conflito.txt mudou depois do pai 1), main = 2
+```
+
+Nenhuma linha passa de 105 colunas, para caber na tela da apresentação. Num
+terminal, o Enter ecoa uma quebra de linha, então as etapas aparecem separadas
+por uma linha em branco.
+
+**Conferência contra o roteiro.** Antes de imprimir a linha, o script confere
+que o resultado real é o do roteiro. No git: os dois agentes partem da `main`
+do central, o push do agente 1 é aceito, o do agente 2 é rejeitado por
+`fetch-first` (um `ref-lock` aqui é erro, porque não há disputa pelo lock), e o
+`pull --rebase` termina limpo no A ou com conflito no C. No Sprout: os dois
+partem da `main`, o agente 1 é aceito com o próprio pai, e o agente 2 tem o pai
+trocado para o changeset do agente 1 no A ou recebe `409` no C. Na primeira
+diferença, a execução para com erro do harness e sai com código 1. A linha
+daquela etapa não aparece, e a mensagem diz a etapa, o esperado e o obtido. Por
+exemplo:
+
+```
+demo:git: step 2 (agente 1: push): expected accepted, got fetch-first
+```
+
+No Sprout, o servidor é encerrado também nesse caminho (§4).
+
+O passo a passo não imprime a linha `resumo:` e **não grava JSON**: apaga o do
+cenário na preparação e não escreve outro (§6).
 
 No modo passo a passo, os agentes não rodam ao mesmo tempo de verdade: o script
 controla a ordem para que a turma veja cada etapa. A concorrência real fica para
@@ -465,11 +537,13 @@ Como o arquivo fica em `demo/tmp`, o `pnpm demo:reset` também o apaga.
 No git e no Sprout, o JSON do cenário é apagado no início de cada execução
 (preparação do §3 e do §4). Uma execução que para com erro do harness não deixa
 arquivo nenhum, então o placar nunca lê um resultado antigo do mesmo sistema
-depois de uma execução que falhou. Mas os dois arquivos são independentes: se
-só um dos sistemas rodou de novo, o placar junta um resultado novo com um
-antigo (por exemplo, um `git-B.json` de ontem com um `sprout-B.json` de hoje).
-Por isso ele mostra a data de cada arquivo, e não recusa datas diferentes: o
-apresentador decide.
+depois de uma execução que falhou. O passo a passo (§5) também apaga o JSON do
+cenário e nunca grava outro: um `--passo` do C apaga o resultado de uma
+execução rápida do C, e o placar do C pede para rodar de novo. Mas os dois
+arquivos são independentes: se só um dos sistemas rodou de novo, o placar
+junta um resultado novo com um antigo (por exemplo, um `git-B.json` de ontem
+com um `sprout-B.json` de hoje). Por isso ele mostra a data de cada arquivo, e
+não recusa datas diferentes: o apresentador decide.
 
 ### Verificação do estado final (🟡)
 
@@ -495,19 +569,30 @@ Validada com git 2.56.0 e node 26.12.0 no omarchy (Fase 1 da #14).
 Definidos:
 
 ```
-pnpm demo:reset                    apaga demo/tmp; cada execução da demo recria o que precisa
-pnpm demo:git --cenario A|B|C      um cenário no git, no modo rápido
-pnpm demo:sprout --cenario A|B|C   um cenário no Sprout, no modo rápido
-pnpm demo:placar --cenario A|B|C   o placar do cenário, git e Sprout lado a lado
+pnpm demo:reset                         apaga demo/tmp; cada execução da demo recria o que precisa
+pnpm demo:git --cenario A|B|C           um cenário no git, no modo rápido
+pnpm demo:sprout --cenario A|B|C        um cenário no Sprout, no modo rápido
+pnpm demo:git --cenario A|C --passo     um cenário no git, passo a passo (§5)
+pnpm demo:sprout --cenario A|C --passo  um cenário no Sprout, passo a passo (§5)
+pnpm demo:placar --cenario A|B|C        o placar do cenário, git e Sprout lado a lado
 ```
 
-O `demo:git` grava `demo/tmp/resultados/git-<cenário>.json`, e o `demo:sprout`,
-`demo/tmp/resultados/sprout-<cenário>.json`. Os dois saem com:
+No modo rápido, o `demo:git` grava `demo/tmp/resultados/git-<cenário>.json`, e
+o `demo:sprout`, `demo/tmp/resultados/sprout-<cenário>.json`. Com `--passo`,
+os dois apagam o JSON do cenário e não gravam outro (§6); um `--passo` do C
+apaga o JSON de uma execução rápida do C. Os dois saem com:
 
-- **0:** a execução terminou e o JSON foi gravado;
-- **1:** erro do harness (§3 no git, §4 no Sprout): mensagem no stderr, sem
-  JSON;
-- **2:** cenário ausente ou inválido: mensagem no stderr.
+- **0:** a execução terminou; no modo rápido, o JSON foi gravado; no passo a
+  passo, não há JSON;
+- **1:** erro do harness (§3 no git, §4 no Sprout, §5 na conferência do passo
+  a passo): mensagem no stderr, sem JSON. Com `--passo`, também o stdin
+  fechado durante uma pausa (`stdin closed during a pause (Enter expected)`);
+- **2:** cenário ausente ou inválido, ou `--passo` com o cenário B
+  (`--passo só existe nos cenários A e C`): mensagem no stderr.
+
+O Ctrl+C numa pausa do passo a passo mata a demo pelo SIGINT (§4). O código
+que o shell mostra é o do sinal, não um código da demo: 130 no `$?`, ou seja,
+128 + 2, em que 2 é o número do SIGINT.
 
 O `demo:placar` lê esses dois arquivos e não grava nada (§6). Sai com:
 
@@ -520,8 +605,6 @@ O `demo:placar` lê esses dois arquivos e não grava nada (§6). Sai com:
 Ainda são proposta, e cada nome será definido na issue indicada:
 
 ```
-pnpm demo:git --cenario A --passo     cenário A no git, passo a passo (#17)
-pnpm demo:sprout --cenario A --passo  cenário A no Sprout, passo a passo (#17)
 pnpm demo:medir                       roda tudo 5 vezes e atualiza docs/resultados.md (#21)
 ```
 
@@ -533,14 +616,15 @@ com arquivos diferentes. Vamos ver isso acontecendo. Primeiro com dois agentes,
 devagar."
 
 **0:30–1:30 · Cenário A no git, passo a passo.**
-Um Enter por etapa. Na rejeição: "o agente B mexeu num arquivo diferente, mas o
-git só pergunta se o commit foi feito em cima da `main` atual. Não foi, então B
-precisa buscar, refazer e tentar de novo."
+Um Enter por etapa. Na rejeição: "o agente 2 mexeu num arquivo diferente, mas o
+git só pergunta se o commit foi feito em cima da `main` atual. Não foi, então o
+agente 2 precisa buscar, refazer e tentar de novo."
 
 **1:30–2:30 · Cenário A no Sprout, passo a passo.**
-"Aqui não existe push. B envia o changeset dizendo 'parti do 1'. O servidor vê que
-a `main` andou, confere que os arquivos são diferentes e só troca o pai. Um
-compare-and-swap, sem lock. B não precisa refazer nada."
+"Aqui não existe push. O agente 2 envia o changeset dizendo 'parti do 1'. O
+servidor vê que a `main` andou, confere que os arquivos são diferentes e só
+troca o pai. Um compare-and-swap, sem lock. O agente 2 não precisa refazer
+nada."
 
 **2:30–3:45 · Cenário B, rápido.**
 "Agora com dez agentes ao mesmo tempo." Roda o git, depois o Sprout, e mostra o

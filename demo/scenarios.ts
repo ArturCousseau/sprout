@@ -9,7 +9,10 @@ export interface Scenario {
   sameFile: boolean;
 }
 
-/** Same table as docs/demo.md §2. The mode (step by step or fast) is #17. */
+/**
+ * Same table as docs/demo.md §2. The mode comes from `--passo`
+ * (parseRunArgs): A and C run step by step or fast, B only fast (#17, R2).
+ */
 export const SCENARIOS: Record<ScenarioId, Scenario> = {
   A: { id: "A", agents: 2, sameFile: false },
   B: { id: "B", agents: 10, sameFile: false },
@@ -33,17 +36,30 @@ function isScenarioId(value: string): value is ScenarioId {
   return Object.hasOwn(SCENARIOS, value);
 }
 
-/** Reads `--cenario A|B|C` from `argv` (arguments after the script name). */
-export function parseScenario(argv: string[]): ParseResult {
+export type RunArgsResult =
+  | { ok: true; scenario: Scenario; step: boolean }
+  | { ok: false; message: string };
+
+/**
+ * The strict parse shared by both entry points: `--cenario` always, and
+ * `--passo` only when `allowStep`. Any other option, a positional argument or
+ * a missing or invalid scenario is an error.
+ */
+function parseOptions(argv: string[], allowStep: boolean): RunArgsResult {
   let value: string | undefined;
+  let step: boolean;
   try {
     const { values } = parseArgs({
       args: argv,
-      options: { cenario: { type: "string" } },
+      options: {
+        cenario: { type: "string" },
+        ...(allowStep && { passo: { type: "boolean" } }),
+      },
       strict: true,
       allowPositionals: false,
     });
     value = values.cenario;
+    step = values.passo === true;
   } catch (error) {
     return { ok: false, message: (error as Error).message };
   }
@@ -56,7 +72,30 @@ export function parseScenario(argv: string[]): ParseResult {
       message: `--cenario must be A, B or C, got "${value}"`,
     };
   }
-  return { ok: true, scenario: SCENARIOS[value] };
+  return { ok: true, scenario: SCENARIOS[value], step };
+}
+
+/**
+ * Reads `--cenario A|B|C` from `argv` (arguments after the script name).
+ * Strict: `--passo` is refused like any unknown option. The scoreboard uses
+ * it (#17, R1).
+ */
+export function parseScenario(argv: string[]): ParseResult {
+  const result = parseOptions(argv, false);
+  return result.ok ? { ok: true, scenario: result.scenario } : result;
+}
+
+/**
+ * Reads `--cenario A|B|C` and the optional `--passo` (step-by-step mode) for
+ * `demo:git` and `demo:sprout` (#17, R1). The step-by-step mode only exists
+ * in scenarios A and C (R2).
+ */
+export function parseRunArgs(argv: string[]): RunArgsResult {
+  const result = parseOptions(argv, true);
+  if (result.ok && result.step && result.scenario.id === "B") {
+    return { ok: false, message: "--passo só existe nos cenários A e C" };
+  }
+  return result;
 }
 
 export interface ExitIo {
@@ -75,4 +114,17 @@ export function parseScenarioOrExit(argv: string[], io: ExitIo): Scenario {
     return io.exit(2);
   }
   return result.scenario;
+}
+
+/** Like parseRunArgs, but on error writes to `io.stderr` and exits with 2. */
+export function parseRunArgsOrExit(
+  argv: string[],
+  io: ExitIo,
+): { scenario: Scenario; step: boolean } {
+  const result = parseRunArgs(argv);
+  if (!result.ok) {
+    io.stderr.write(`${result.message}\n`);
+    return io.exit(2);
+  }
+  return { scenario: result.scenario, step: result.step };
 }

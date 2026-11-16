@@ -3,6 +3,8 @@ import {
   type ExitIo,
   SCENARIOS,
   fileFor,
+  parseRunArgs,
+  parseRunArgsOrExit,
   parseScenario,
   parseScenarioOrExit,
 } from "./scenarios.js";
@@ -86,12 +88,62 @@ describe("parseScenarioOrExit", () => {
     ["D", ["--cenario", "D"], /must be A, B or C, got "D"/],
     ["lowercase", ["--cenario", "a"], /must be A, B or C, got "a"/],
     ["unknown option", ["--cenario", "A", "--extra"], /--extra/],
+    // The scoreboard keeps the strict parse: --passo is not its option (R1).
+    ["--passo", ["--cenario", "A", "--passo"], /--passo/],
   ])("%s → message on stderr and exit code 2", (_label, argv, message) => {
     const { io, written, codes } = fakeIo();
 
     expect(() => parseScenarioOrExit(argv, io)).toThrow(ExitCalled);
     expect(written).toHaveLength(1);
     expect(written[0]).toMatch(message);
+    expect(codes).toEqual([2]);
+  });
+});
+
+describe("parseRunArgs (#17, R1)", () => {
+  it.each(["A", "C"] as const)("--cenario %s --passo → step", (id) => {
+    expect(parseRunArgs(["--cenario", id, "--passo"])).toEqual({
+      ok: true,
+      scenario: SCENARIOS[id],
+      step: true,
+    });
+  });
+
+  it.each(["A", "B", "C"] as const)(
+    "--cenario %s without --passo → fast mode",
+    (id) => {
+      expect(parseRunArgs(["--cenario", id])).toEqual({
+        ok: true,
+        scenario: SCENARIOS[id],
+        step: false,
+      });
+    },
+  );
+
+  it("--cenario B --passo → its own message (R2)", () => {
+    expect(parseRunArgs(["--cenario", "B", "--passo"])).toEqual({
+      ok: false,
+      message: "--passo só existe nos cenários A e C",
+    });
+  });
+
+  it("an unknown option is still refused", () => {
+    expect(parseRunArgs(["--cenario", "A", "--extra"])).toEqual({
+      ok: false,
+      // The matcher is typed `any`; the cast keeps no-unsafe-assignment happy.
+      message: expect.stringMatching(/--extra/) as string,
+    });
+  });
+});
+
+describe("parseRunArgsOrExit (#17, R2)", () => {
+  it("--cenario B --passo → message on stderr and exit code 2", () => {
+    const { io, written, codes } = fakeIo();
+
+    expect(() => parseRunArgsOrExit(["--cenario", "B", "--passo"], io)).toThrow(
+      ExitCalled,
+    );
+    expect(written).toEqual(["--passo só existe nos cenários A e C\n"]);
     expect(codes).toEqual([2]);
   });
 });

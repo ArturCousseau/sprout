@@ -88,29 +88,7 @@ async function runAgents(
   // Every agent's GET, hash and PUT, one after the other, before the barrier
   // exists (D5): a request that fails here throws before any agent waits, so
   // no agent is left waiting forever for an arrival that never comes.
-  const prepared: Prepared[] = [];
-  for (let agent = 1; agent <= scenario.agents; agent++) {
-    const head = await request(send, "GET", `${url}/refs/main`);
-    checkStatus("getMain", head.status);
-    const parent = parseMainRef(await readJson(head, "getMain"));
-
-    const content = `agente ${agent}\n`;
-    const hash = hashContent(content);
-    const put = await request(send, "PUT", `${url}/blobs/${hash}`, {
-      headers: { "content-type": "application/octet-stream" },
-      body: content,
-    });
-    checkStatus("putBlob", put.status);
-    await put.arrayBuffer(); // read and dropped, so undici frees the connection
-
-    const body = JSON.stringify({
-      parent,
-      author: `agente-${agent}`,
-      message: `agente ${agent}`,
-      changes: [{ path: fileFor(scenario, agent), blobHash: hash }],
-    });
-    prepared.push({ agent, parent, body });
-  }
+  const prepared = await prepareAgents(scenario, url, send);
 
   // The concurrent part starts here.
   const barrier = createBarrier(scenario.agents);
@@ -137,8 +115,52 @@ async function runAgents(
   return agents;
 }
 
+/**
+ * The head of `main` read by `GET /refs/main` on the server at `url`. Used by
+ * the fast mode and by the step-by-step mode (#17).
+ */
+export async function getMain(send: SproutFetch, url: string): Promise<number> {
+  const head = await request(send, "GET", `${url}/refs/main`);
+  checkStatus("getMain", head.status);
+  return parseMainRef(await readJson(head, "getMain"));
+}
+
+/**
+ * Each agent's GET, hash and PUT against the server at `url`, one agent after
+ * the other; the POST body is built but not sent. Element i is agent i + 1.
+ * Used by the fast mode and by the step-by-step mode (#17).
+ */
+export async function prepareAgents(
+  scenario: Scenario,
+  url: string,
+  send: SproutFetch,
+): Promise<Prepared[]> {
+  const prepared: Prepared[] = [];
+  for (let agent = 1; agent <= scenario.agents; agent++) {
+    const parent = await getMain(send, url);
+
+    const content = `agente ${agent}\n`;
+    const hash = hashContent(content);
+    const put = await request(send, "PUT", `${url}/blobs/${hash}`, {
+      headers: { "content-type": "application/octet-stream" },
+      body: content,
+    });
+    checkStatus("putBlob", put.status);
+    await put.arrayBuffer(); // read and dropped, so undici frees the connection
+
+    const body = JSON.stringify({
+      parent,
+      author: `agente-${agent}`,
+      message: `agente ${agent}`,
+      changes: [{ path: fileFor(scenario, agent), blobHash: hash }],
+    });
+    prepared.push({ agent, parent, body });
+  }
+  return prepared;
+}
+
 /** What an agent has ready before the barrier. */
-interface Prepared {
+export interface Prepared {
   agent: number;
   /** The head read by the GET, sent as the changeset's parent. */
   parent: number;
@@ -206,7 +228,7 @@ async function runAgent({
  * without pausing until its first await, so a POST called right after the
  * barrier release leaves in that same microtask round (D6).
  */
-async function request(
+export async function request(
   send: SproutFetch,
   method: string,
   url: string,
@@ -223,7 +245,10 @@ async function request(
 }
 
 /** The decoded JSON body; a body that is not JSON is a HarnessError (R10). */
-async function readJson(response: Response, what: string): Promise<unknown> {
+export async function readJson(
+  response: Response,
+  what: string,
+): Promise<unknown> {
   const text = await response.text();
   try {
     return JSON.parse(text) as unknown;
