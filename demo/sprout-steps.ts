@@ -1,7 +1,7 @@
 import { rm } from "node:fs/promises";
 import { HarnessError } from "./harness-error.js";
 import { resultPath } from "./results.js";
-import type { Scenario } from "./scenarios.js";
+import { fileFor, type Scenario } from "./scenarios.js";
 import {
   getMain,
   type Prepared,
@@ -165,6 +165,14 @@ async function runSteps(
     scenario.sameFile ? "conflict" : `parent changed to ${afterFirst}`,
     describeAnswer(answer2, second.parent),
   );
+  if (answer2.status === 409) {
+    expectStep(
+      3,
+      action(second),
+      `conflict in ${fileFor(scenario, 2)}`,
+      `conflict in ${answer2.conflicts.join(", ")}`,
+    );
+  }
   const result =
     answer2.status === 409
       ? `CONFLITO (${answer2.conflicts.join(", ")} mudou depois do pai ${second.parent})`

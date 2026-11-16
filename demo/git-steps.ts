@@ -9,6 +9,7 @@ import {
 } from "./git-agents.js";
 import { classifyPull, classifyPush, type PushResult } from "./git.js";
 import { HarnessError } from "./harness-error.js";
+import { fileFor } from "./scenarios.js";
 
 export interface RunGitStepsOptions extends PrepareGitRunOptions {
   /** Where the step lines go. Tests record them. */
@@ -131,6 +132,13 @@ export async function runGitSteps({
     .split("\n")
     .join(", ");
   await gitOk(["-C", second, "rebase", "--abort"]);
+  // Checked after the abort, so a divergence never leaves the clone mid-rebase.
+  expectStep(
+    4,
+    action4,
+    `conflict in ${fileFor(scenario, 2)}`,
+    `conflict in ${conflicts}`,
+  );
   log(
     stepLine(
       action4,
