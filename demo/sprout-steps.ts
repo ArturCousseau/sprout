@@ -67,7 +67,7 @@ type Answer =
   { status: 201; parent: number } | { status: 409; conflicts: string[] };
 
 /** An answer in the words of the divergence messages. */
-function describe(answer: Answer, sentParent: number): string {
+function describeAnswer(answer: Answer, sentParent: number): string {
   if (answer.status === 409) return "conflict";
   return answer.parent === sentParent
     ? `accepted on parent ${answer.parent}`
@@ -152,7 +152,7 @@ async function runSteps(
     2,
     action(first),
     `accepted on parent ${first.parent}`,
-    describe(answer1, first.parent),
+    describeAnswer(answer1, first.parent),
   );
   const afterFirst = await getMain(send, url);
   log(stepLine(sends(first), `aceito, main = ${afterFirst}`));
@@ -163,7 +163,7 @@ async function runSteps(
     3,
     action(second),
     scenario.sameFile ? "conflict" : `parent changed to ${afterFirst}`,
-    describe(answer2, second.parent),
+    describeAnswer(answer2, second.parent),
   );
   const result =
     answer2.status === 409
