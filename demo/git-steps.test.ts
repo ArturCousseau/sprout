@@ -224,6 +224,45 @@ describe("runGitSteps: checked against the script (#17, D3, R8)", () => {
     },
     GIT_TIMEOUT,
   );
+
+  it(
+    "another agente-2.txt before step 4 in A → HarnessError, no step 4 line",
+    async () => {
+      const events: string[] = [];
+      let calls = 0;
+      // The fourth pause pushes, from a third clone, an agente-2.txt with
+      // other content: agent 2's pull --rebase then really conflicts in A.
+      const pause = async (): Promise<void> => {
+        calls += 1;
+        if (calls !== 4) return;
+        const intruder = join(base, "intruso");
+        await gitOk(["clone", "-q", join(base, "central.git"), intruder]);
+        for (const [key, value] of identityGitConfig("intruso")) {
+          await gitOk(["-C", intruder, "config", key, value]);
+        }
+        await writeFile(join(intruder, "agente-2.txt"), "intruso\n");
+        await gitOk(["-C", intruder, "add", "agente-2.txt"]);
+        await gitOk(["-C", intruder, "commit", "-q", "-m", "intruso"]);
+        await gitOk(["-C", intruder, "push", "-q", "origin", "main"]);
+      };
+
+      const running = runGitSteps({
+        scenario: SCENARIOS.A,
+        baseDir: base,
+        resultsDir: results,
+        log: (line) => events.push(line),
+        pause,
+      });
+
+      await expect(running).rejects.toBeInstanceOf(HarnessError);
+      await expect(running).rejects.toThrow(
+        "step 4 (agente 2: pull --rebase + push): expected rebased, got conflict",
+      );
+      expect(events).toHaveLength(4); // header and steps 1-3, nothing of step 4
+      expect(calls).toBe(4);
+    },
+    GIT_TIMEOUT,
+  );
 });
 
 describe("expectFetchFirst: agent 2's push (#17, R6)", () => {
