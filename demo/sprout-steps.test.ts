@@ -230,4 +230,54 @@ describe("runSproutSteps: checked against the script (#17, D3, R8)", () => {
     },
     SPROUT_TIMEOUT,
   );
+
+  it(
+    "another agente-2.txt before step 3 in A → HarnessError, no step 3 line, server stopped",
+    async () => {
+      const events: string[] = [];
+      let calls = 0;
+      // The third pause sends, as another author, a changeset on parent 1
+      // that changes agente-2.txt: agent 2's changeset then really conflicts
+      // in A.
+      const pause = async (): Promise<void> => {
+        calls += 1;
+        if (calls !== 3) return;
+        const { url } = onlyServer();
+        const put = await fetch(`${url}/blobs/${H_INTRUSO}`, {
+          method: "PUT",
+          headers: { "content-type": "application/octet-stream" },
+          body: "intruso\n",
+        });
+        expect(put.status).toBe(201);
+        const post = await fetch(`${url}/changesets`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            parent: 1,
+            author: "intruso",
+            message: "intruso",
+            changes: [{ path: "agente-2.txt", blobHash: H_INTRUSO }],
+          }),
+        });
+        expect(post.status).toBe(201);
+      };
+
+      const running = runSproutSteps(
+        options(SCENARIOS.A, { log: (line) => events.push(line), pause }),
+      );
+
+      await expect(running).rejects.toBeInstanceOf(HarnessError);
+      await expect(running).rejects.toThrow(
+        "step 3 (agente 2: envia changeset): expected parent changed to 2, got conflict",
+      );
+      expect(events).toHaveLength(3); // header and steps 1-2, nothing of step 3
+      expect(calls).toBe(3);
+      const server = onlyServer();
+      expect(await settledValue(server.exited)).toEqual(STOPPED_BY_SIGTERM);
+      await expect(fetch(`${server.url}/refs/main`)).rejects.toThrow(
+        "fetch failed",
+      );
+    },
+    SPROUT_TIMEOUT,
+  );
 });
