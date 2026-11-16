@@ -2,10 +2,12 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runGitCli } from "./git-cli.js";
 import { HarnessError } from "./harness-error.js";
 import type { ExitIo } from "./scenarios.js";
+import { runScoreboardCli } from "./scoreboard-cli.js";
 
 // Fake `process`: records what was written and the exit code. exit() throws so
 // that, like the real process.exit, nothing after it runs.
@@ -54,6 +56,7 @@ describe("criterion 1: demo:git exit codes", () => {
         baseDir: base,
         resultsDir: results,
         log: () => {},
+        input: new PassThrough(),
       });
 
       await expect(running).rejects.toThrow(ExitCalled);
@@ -74,6 +77,7 @@ describe("criterion 1: demo:git exit codes", () => {
       baseDir: base,
       resultsDir: results,
       log: () => {},
+      input: new PassThrough(),
     });
 
     await expect(running).rejects.toThrow(ExitCalled);
@@ -93,6 +97,7 @@ describe("criterion 1: demo:git exit codes", () => {
         baseDir: base,
         resultsDir: results,
         log: () => {},
+        input: new PassThrough(),
         checkAttempts: () => {
           throw new HarnessError("ceiling 0");
         },
@@ -104,6 +109,124 @@ describe("criterion 1: demo:git exit codes", () => {
       expect(written[0]).toContain("agente 1: ceiling 0");
       expect(written[0]).toContain("agente 2: ceiling 0");
       expect(existsSync(join(results, "git-A.json"))).toBe(false);
+    },
+    GIT_TIMEOUT,
+  );
+});
+
+/** An input with `text` already written and still open, like a terminal. */
+function typed(text: string): PassThrough {
+  const input = new PassThrough();
+  input.write(text);
+  return input;
+}
+
+describe("demo:git --passo (#17)", () => {
+  it(
+    "A --passo after a fast A → exit 0, no JSON, and the scoreboard asks for demo:git (D6)",
+    async () => {
+      const fast = fakeIo();
+      await expect(
+        runGitCli(["--cenario", "A"], fast.io, {
+          baseDir: base,
+          resultsDir: results,
+          log: () => {},
+          input: new PassThrough(),
+        }),
+      ).rejects.toThrow(ExitCalled);
+      expect(fast.codes).toEqual([0]);
+      expect(existsSync(join(results, "git-A.json"))).toBe(true);
+
+      const { io, written, codes } = fakeIo();
+      const running = runGitCli(["--cenario", "A", "--passo"], io, {
+        baseDir: base,
+        resultsDir: results,
+        log: () => {},
+        input: typed("\n".repeat(4)),
+      });
+
+      await expect(running).rejects.toThrow(ExitCalled);
+      expect(codes).toEqual([0]);
+      expect(written).toEqual([]);
+      expect(existsSync(join(results, "git-A.json"))).toBe(false);
+
+      const board = fakeIo();
+      const out: string[] = [];
+      const scoreboard = runScoreboardCli(
+        ["--cenario", "A"],
+        {
+          ...board.io,
+          stdout: {
+            write(text: string) {
+              out.push(text);
+              return true;
+            },
+          },
+        },
+        { resultsDir: results },
+      );
+      await expect(scoreboard).rejects.toThrow(ExitCalled);
+      expect(board.codes).toEqual([1]);
+      expect(board.written.join("")).toContain("git-A.json");
+      expect(out).toEqual([]);
+    },
+    GIT_TIMEOUT,
+  );
+
+  it(
+    "C --passo → exit 0",
+    async () => {
+      const { io, written, codes } = fakeIo();
+
+      const running = runGitCli(["--cenario", "C", "--passo"], io, {
+        baseDir: base,
+        resultsDir: results,
+        log: () => {},
+        input: typed("\n".repeat(4)),
+      });
+
+      await expect(running).rejects.toThrow(ExitCalled);
+      expect(codes).toEqual([0]);
+      expect(written).toEqual([]);
+    },
+    GIT_TIMEOUT,
+  );
+
+  it("B --passo → exit 2 with the R2 message, nothing ran", async () => {
+    const { io, written, codes } = fakeIo();
+
+    const running = runGitCli(["--cenario", "B", "--passo"], io, {
+      baseDir: base,
+      resultsDir: results,
+      log: () => {},
+      input: new PassThrough(),
+    });
+
+    await expect(running).rejects.toThrow(ExitCalled);
+    expect(codes).toEqual([2]);
+    expect(written).toEqual(["--passo só existe nos cenários A e C\n"]);
+    expect(await readdir(base)).toEqual([]);
+  });
+
+  it(
+    "input already closed → exit 1 with the pause's HarnessError (D7)",
+    async () => {
+      const { io, written, codes } = fakeIo();
+      const input = new PassThrough();
+      input.end();
+
+      const running = runGitCli(["--cenario", "A", "--passo"], io, {
+        baseDir: base,
+        resultsDir: results,
+        log: () => {},
+        input,
+      });
+
+      await expect(running).rejects.toThrow(ExitCalled);
+      expect(codes).toEqual([1]);
+      expect(written).toEqual([
+        "demo:git: stdin closed during a pause (Enter expected)\n",
+      ]);
     },
     GIT_TIMEOUT,
   );
