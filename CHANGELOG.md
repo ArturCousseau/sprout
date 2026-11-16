@@ -70,7 +70,8 @@ para a issue e para o PR de onde veio. O processo de release está no
   `terminal: false`, para o Ctrl+C chegar como SIGINT e não deixar o servidor
   vivo. O placar continua recusando `--passo`. O `docs/demo.md` documenta as
   linhas, a conferência, os códigos de saída e o Ctrl+C
-  ([#17](https://github.com/ArturCousseau/sprout/issues/17)).
+  ([#17](https://github.com/ArturCousseau/sprout/issues/17),
+  [#45](https://github.com/ArturCousseau/sprout/pull/45)).
 
 ### Alterado
 
