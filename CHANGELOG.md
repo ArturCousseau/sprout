@@ -72,6 +72,20 @@ para a issue e para o PR de onde veio. O processo de release está no
   linhas, a conferência, os códigos de saída e o Ctrl+C
   ([#17](https://github.com/ArturCousseau/sprout/issues/17),
   [#45](https://github.com/ArturCousseau/sprout/pull/45)).
+- Saída colorida e decorada da demo, com cores ANSI escritas à mão, sem
+  dependência. Cada execução abre com um título
+  (`━━ git · cenário A · passo a passo ━━`); o passo a passo ganha a linha
+  `Enter antes de cada etapa` e o contador `N/T` em cada etapa; o modo rápido
+  ganha um separador antes do resumo. As palavras do resultado ganham `✓`/`✗`
+  e cor (aceito em verde, rejeitado em vermelho, conflito em amarelo, pai
+  trocado em azul), e prefixos, setas, hashes e metadados saem em cinza. No
+  placar, o cabeçalho sai em negrito e, em rejeições, tentativas e tempo
+  total, o menor valor mostrado sai em verde e o maior em vermelho. As cores
+  só aparecem com o stdout num terminal e `NO_COLOR` ausente ou vazio; sem
+  cor, o texto é o mesmo. Nenhuma linha passa de 111 colunas, salvo o resumo
+  do Sprout a partir de 1000 ms. O `docs/demo.md` traz as novas linhas, as
+  cores, o `NO_COLOR` e a verificação manual
+  ([#20](https://github.com/ArturCousseau/sprout/issues/20)).
 
 ### Alterado
 
