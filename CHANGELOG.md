@@ -85,7 +85,8 @@ para a issue e para o PR de onde veio. O processo de release está no
   cor, o texto é o mesmo. Nenhuma linha passa de 111 colunas, salvo o resumo
   do Sprout a partir de 1000 ms. O `docs/demo.md` traz as novas linhas, as
   cores, o `NO_COLOR` e a verificação manual
-  ([#20](https://github.com/ArturCousseau/sprout/issues/20)).
+  ([#20](https://github.com/ArturCousseau/sprout/issues/20),
+  [#46](https://github.com/ArturCousseau/sprout/pull/46)).
 
 ### Alterado
 
