@@ -2,9 +2,11 @@ import { HarnessError } from "./harness-error.js";
 
 /**
  * The server calls a Sprout agent makes in one cycle (docs/demo.md §4, "O
- * ciclo de um agente").
+ * ciclo de um agente"), plus getTree, which the harness makes once at the end
+ * of a fast run to check the main (#19).
  */
-export type SproutOperation = "getMain" | "putBlob" | "postChangesets";
+export type SproutOperation =
+  "getMain" | "putBlob" | "postChangesets" | "getTree";
 
 /**
  * HTTP statuses a Sprout agent expects from each call; anything else is a
@@ -18,12 +20,15 @@ export type SproutOperation = "getMain" | "putBlob" | "postChangesets";
  * - postChangesets, POST /changesets: 201 accepted (maybe reparented), 409
  *   real conflict (sent by sendConflict). Any other status (400, 404, 415
  *   and 500 among them) means a bad request or a server bug.
+ * - getTree, GET /changesets/:id/tree: 200. The id comes from GET /refs/main,
+ *   so 404 (no such changeset) and 400 (bad id) mean a server bug.
  * A Sprout agent never retries, so its `rejections` is always `{}`.
  */
 export const EXPECTED_STATUS: Record<SproutOperation, readonly number[]> = {
   getMain: [200],
   putBlob: [201, 200],
   postChangesets: [201, 409],
+  getTree: [200],
 };
 
 /** Throws a HarnessError when `status` is not expected for `op`. */
@@ -86,4 +91,43 @@ export function parseConflicts(body: unknown): string[] {
     );
   }
   return conflicts;
+}
+
+/**
+ * GET /changesets/:id/tree 200 → `{ id, entries: [{ path, blobHash }] }`:
+ * returns path → blobHash (#19, D6). The body's `id` must be the one asked
+ * for, every entry needs a string `path` and `blobHash`, and a path may not
+ * repeat (A10): a Map would silently keep only the last one.
+ */
+export function parseTree(
+  body: unknown,
+  id: number,
+): ReadonlyMap<string, string> {
+  const got = `(got ${JSON.stringify(body)})`;
+  if (field(body, "id") !== id) {
+    throw new HarnessError(`sprout: getTree body: id must be ${id} ${got}`);
+  }
+  const entries = field(body, "entries");
+  if (
+    !Array.isArray(entries) ||
+    !entries.every(
+      (entry) =>
+        typeof field(entry, "path") === "string" &&
+        typeof field(entry, "blobHash") === "string",
+    )
+  ) {
+    throw new HarnessError(
+      `sprout: getTree body: entries must be an array of { path, blobHash } strings ${got}`,
+    );
+  }
+  const tree = new Map<string, string>();
+  for (const entry of entries as { path: string; blobHash: string }[]) {
+    if (tree.has(entry.path)) {
+      throw new HarnessError(
+        `sprout: getTree body: duplicate path ${entry.path} ${got}`,
+      );
+    }
+    tree.set(entry.path, entry.blobHash);
+  }
+  return tree;
 }

@@ -5,6 +5,7 @@ import {
   parseAccepted,
   parseConflicts,
   parseMainRef,
+  parseTree,
   type SproutOperation,
 } from "./sprout-responses.js";
 
@@ -16,9 +17,15 @@ const expected: [SproutOperation, number][] = [
   ["putBlob", 200],
   ["postChangesets", 201],
   ["postChangesets", 409],
+  ["getTree", 200],
 ];
 
-const operations: SproutOperation[] = ["getMain", "putBlob", "postChangesets"];
+const operations: SproutOperation[] = [
+  "getMain",
+  "putBlob",
+  "postChangesets",
+  "getTree",
+];
 const unexpected: [SproutOperation, number][] = operations.flatMap((op) =>
   [400, 404, 415, 500].map((status): [SproutOperation, number] => [op, status]),
 );
@@ -120,5 +127,78 @@ describe("criterion 6: response bodies", () => {
     expect(() => parseConflicts(body)).toThrow(
       "conflicts must be a non-empty array of strings",
     );
+  });
+});
+
+// Written by hand with `printf 'agente N\n' | sha256sum` (the same values as
+// sprout-agents.test.ts).
+const H1 = "ebf0a5cfd5f69be2c45927bf26823df03672b0aab59e77ffedaf4fec371c7161";
+const H2 = "3ae6b2f9235e1e7213e554ad7abd104870f8897a2d51771002b3281f5d53ff94";
+
+/** Matches exactly `message`, not a part of it. */
+function exactly(message: string): RegExp {
+  return new RegExp(`^${message.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
+}
+
+// GET /changesets/:id/tree 200 → `{ id, entries: [{ path, blobHash }] }`
+// (src/server/app.ts). Bodies, maps and messages written by hand (#19, D6).
+describe("parseTree (#19, D6)", () => {
+  it.each([
+    [
+      "two entries",
+      {
+        id: 3,
+        entries: [
+          { path: "agente-1.txt", blobHash: H1 },
+          { path: "agente-2.txt", blobHash: H2 },
+        ],
+      },
+      [
+        ["agente-1.txt", H1],
+        ["agente-2.txt", H2],
+      ],
+    ],
+    ["no entries (the root's tree)", { id: 3, entries: [] }, []],
+  ])("SR2 %s → path → blobHash", (_label, body, entries) => {
+    expect(parseTree(body, 3)).toEqual(new Map(entries as [string, string][]));
+  });
+
+  it.each([
+    ["null", null, "sprout: getTree body: id must be 3 (got null)"],
+    ["{}", {}, "sprout: getTree body: id must be 3 (got {})"],
+    [
+      "id 2 asked as 3",
+      { id: 2, entries: [] },
+      'sprout: getTree body: id must be 3 (got {"id":2,"entries":[]})',
+    ],
+    [
+      "entries not an array",
+      { id: 3, entries: "agente-1.txt" },
+      'sprout: getTree body: entries must be an array of { path, blobHash } strings (got {"id":3,"entries":"agente-1.txt"})',
+    ],
+    [
+      "a numeric path",
+      { id: 3, entries: [{ path: 1, blobHash: H1 }] },
+      `sprout: getTree body: entries must be an array of { path, blobHash } strings (got {"id":3,"entries":[{"path":1,"blobHash":"${H1}"}]})`,
+    ],
+    [
+      "a null blobHash",
+      { id: 3, entries: [{ path: "agente-1.txt", blobHash: null }] },
+      'sprout: getTree body: entries must be an array of { path, blobHash } strings (got {"id":3,"entries":[{"path":"agente-1.txt","blobHash":null}]})',
+    ],
+    [
+      "duplicate path",
+      {
+        id: 3,
+        entries: [
+          { path: "agente-1.txt", blobHash: H1 },
+          { path: "agente-1.txt", blobHash: H2 },
+        ],
+      },
+      `sprout: getTree body: duplicate path agente-1.txt (got {"id":3,"entries":[{"path":"agente-1.txt","blobHash":"${H1}"},{"path":"agente-1.txt","blobHash":"${H2}"}]})`,
+    ],
+  ])("SR3 %s → HarnessError", (_label, body, message) => {
+    expect(() => parseTree(body, 3)).toThrow(HarnessError);
+    expect(() => parseTree(body, 3)).toThrow(exactly(message));
   });
 });
