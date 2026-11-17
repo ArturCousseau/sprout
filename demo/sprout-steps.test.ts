@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { visibleWidth } from "./color.js";
+import { stripAnsi, visibleWidth } from "./color.js";
 import { HarnessError } from "./harness-error.js";
 import { SCENARIOS, type Scenario } from "./scenarios.js";
 import {
@@ -94,7 +94,7 @@ function recorder() {
 /** Options of a run inside `base`, with the captured server. */
 function options(
   scenario: Scenario,
-  extra: Pick<RunSproutStepsOptions, "log" | "pause">,
+  extra: Pick<RunSproutStepsOptions, "log" | "pause" | "color">,
 ): RunSproutStepsOptions {
   return {
     scenario,
@@ -145,6 +145,54 @@ describe("runSproutSteps: lines (#17, D3, D5)", () => {
       ]);
       expect(events.filter((line) => visibleWidth(line) > MAX_COLUMNS)).toEqual(
         [],
+      );
+    },
+    SPROUT_TIMEOUT,
+  );
+});
+
+describe("runSproutSteps: lines with color (#20, D9)", () => {
+  it(
+    "scenario A: the codes of D1 on every line, written by hand, and the same text without them",
+    async () => {
+      const { events, log, pause } = recorder();
+
+      await runSproutSteps(options(SCENARIOS.A, { log, pause, color: true }));
+
+      // Written by hand: section 2 of the plan of #20.
+      expect(events).toEqual([
+        "\x1b[2m━━\x1b[22m \x1b[1msprout · cenário A · passo a passo\x1b[22m \x1b[2m━━\x1b[22m",
+        "\x1b[2m[sprout]\x1b[22m Enter antes de cada etapa",
+        "\x1b[2m[sprout]\x1b[22m 1/3 agente 1 e agente 2 partem da main no changeset 1",
+        "\x1b[2m[sprout]\x1b[22m 2/3 agente 1: envia changeset \x1b[2m(pai = 1)\x1b[22m    \x1b[2m→\x1b[22m \x1b[32m✓ aceito\x1b[39m, main = 2",
+        "\x1b[2m[sprout]\x1b[22m 3/3 agente 2: envia changeset \x1b[2m(pai = 1)\x1b[22m    \x1b[2m→\x1b[22m \x1b[32m✓ aceito\x1b[39m, \x1b[34mpai trocado\x1b[39m para 2 (outro arquivo), main = 3",
+      ]);
+      // Without the codes, the plain lines of section 1 (R15).
+      expect(events.map(stripAnsi)).toEqual([
+        "━━ sprout · cenário A · passo a passo ━━",
+        "[sprout] Enter antes de cada etapa",
+        "[sprout] 1/3 agente 1 e agente 2 partem da main no changeset 1",
+        "[sprout] 2/3 agente 1: envia changeset (pai = 1)    → ✓ aceito, main = 2",
+        "[sprout] 3/3 agente 2: envia changeset (pai = 1)    → ✓ aceito, pai trocado para 2 (outro arquivo), main = 3",
+      ]);
+      expect(events.filter((line) => visibleWidth(line) > MAX_COLUMNS)).toEqual(
+        [],
+      );
+    },
+    SPROUT_TIMEOUT,
+  );
+
+  it(
+    "scenario C: the conflict line in yellow",
+    async () => {
+      const { events, log, pause } = recorder();
+
+      await runSproutSteps(options(SCENARIOS.C, { log, pause, color: true }));
+
+      expect(events).toHaveLength(5);
+      // Written by hand: section 2 of the plan of #20.
+      expect(events.at(-1)).toBe(
+        "\x1b[2m[sprout]\x1b[22m 3/3 agente 2: envia changeset \x1b[2m(pai = 1)\x1b[22m    \x1b[2m→\x1b[22m \x1b[33m✗ CONFLITO\x1b[39m (conflito.txt mudou depois do pai 1), main = 2",
       );
     },
     SPROUT_TIMEOUT,

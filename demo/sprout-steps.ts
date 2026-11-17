@@ -37,6 +37,8 @@ export interface RunSproutStepsOptions {
   startServer?: (options: StartSproutServerOptions) => Promise<SproutServer>;
   /** Waits for the presenter before each step (D4). Tests inject their own. */
   pause: () => Promise<void>;
+  /** Colors on the lines (D2 of #20). Off by default, as in the tests. */
+  color?: boolean;
 }
 
 // Column of the arrow: the longest action, "agente 2: envia changeset (pai =
@@ -122,6 +124,7 @@ export async function runSproutSteps({
   fetch: send = globalThis.fetch,
   startServer = startSproutServer,
   pause,
+  color = false,
 }: RunSproutStepsOptions): Promise<void> {
   for (const path of [dataDir, resultPath(resultsDir, "sprout", scenario.id)]) {
     await rm(path, { recursive: true, force: true });
@@ -130,7 +133,7 @@ export async function runSproutSteps({
 
   // The server is stopped on every path, as in the fast mode (R5 of #16).
   try {
-    await runSteps(scenario, server.url, send, log, pause);
+    await runSteps(scenario, server.url, send, log, pause, color);
   } catch (error) {
     // The first error wins. stop() only rejects after the child closed
     // (SIGKILL), so ignoring its error here never leaves a process behind.
@@ -147,6 +150,7 @@ async function runSteps(
   send: SproutFetch,
   log: (line: string) => void,
   pause: () => Promise<void>,
+  color: boolean,
 ): Promise<void> {
   const [first, second] = await prepareAgents(scenario, url, send);
   /** One agent's POST /changesets (201 or 409), with its body parsed. */
@@ -165,13 +169,13 @@ async function runSteps(
     `agente ${agent.agent}: envia changeset`;
   const meta = (agent: Prepared): string => `(pai = ${agent.parent})`;
 
-  // Every line goes through paint (D1 of #20). Still without color here.
-  const paint = painter(false);
+  // Every line goes through paint (D1 of #20): plain text when color is off.
+  const paint = painter(color);
   const accepted = paint("green", "✓ aceito");
 
   // The title and the Enter line replace the one-line header of R9 of #17
   // (D4, R12 of #20).
-  log(formatRunTitle("sprout", scenario.id, "passo a passo"));
+  log(formatRunTitle("sprout", scenario.id, "passo a passo", color));
   log(`${paint("dim", "[sprout]")} Enter antes de cada etapa`);
 
   await pause();
