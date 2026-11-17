@@ -83,6 +83,7 @@ function options(extra: Partial<SproutCliOptions> = {}): SproutCliOptions {
     log: () => {},
     startServer: capture,
     input: new PassThrough(),
+    color: false,
     ...extra,
   };
 }
@@ -251,6 +252,42 @@ describe("demo:sprout --passo (#17)", () => {
       await expect(fetch(`${server.url}/refs/main`)).rejects.toThrow(
         "fetch failed",
       );
+    },
+    SPROUT_TIMEOUT,
+  );
+});
+
+describe("demo:sprout with color (#20, D2)", () => {
+  // Written by hand: the colored titles of section 2 of the plan of #20.
+  it.each([
+    [
+      "A --passo",
+      ["--cenario", "A", "--passo"],
+      "\x1b[2m━━\x1b[22m \x1b[1msprout · cenário A · passo a passo\x1b[22m \x1b[2m━━\x1b[22m",
+    ],
+    [
+      "A fast",
+      ["--cenario", "A"],
+      "\x1b[2m━━\x1b[22m \x1b[1msprout · cenário A · modo rápido\x1b[22m \x1b[2m━━\x1b[22m",
+    ],
+  ])(
+    "%s: color reaches the run, the first line is the colored title",
+    async (_label, argv, title) => {
+      const { io, codes } = fakeIo();
+      const lines: string[] = [];
+      const log = (line: string): void => {
+        lines.push(line);
+      };
+
+      const running = runSproutCli(
+        argv,
+        io,
+        options({ log, input: typed("\n".repeat(3)), color: true }),
+      );
+
+      await expect(running).rejects.toThrow(ExitCalled);
+      expect(codes).toEqual([0]);
+      expect(lines[0]).toBe(title);
     },
     SPROUT_TIMEOUT,
   );

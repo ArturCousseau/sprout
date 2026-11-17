@@ -22,6 +22,8 @@ export interface ScoreboardIo extends ExitIo {
 export interface ScoreboardCliOptions {
   /** Folder with `git-<X>.json` and `sprout-<X>.json`. */
   resultsDir: string;
+  /** Colors on, decided by the entry point with shouldColor (D2 of #20). */
+  color: boolean;
 }
 
 /** One result file, read and checked, with its modification time. */
@@ -83,7 +85,7 @@ async function loadResults(
 export async function runScoreboardCli(
   argv: string[],
   io: ScoreboardIo,
-  { resultsDir }: ScoreboardCliOptions,
+  { resultsDir, color }: ScoreboardCliOptions,
 ): Promise<never> {
   const scenario = parseScenarioOrExit(argv, io);
   // The write is inside the try (R3): a bug while printing must be rethrown,
@@ -97,6 +99,7 @@ export async function runScoreboardCli(
         sprout: summarize(sprout.run.agents),
         gitTime: git.mtime,
         sproutTime: sprout.mtime,
+        color,
       }),
     );
   } catch (error) {

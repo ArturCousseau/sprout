@@ -5,6 +5,7 @@
  * step and without a result file.
  */
 import { join, resolve } from "node:path";
+import { shouldColor } from "./color.js";
 import { DEFAULT_RESULTS_DIR } from "./results.js";
 import { runSproutCli } from "./sprout-cli.js";
 
@@ -14,4 +15,5 @@ await runSproutCli(process.argv.slice(2), process, {
   dataDir: join(repoRoot, "demo/tmp/sprout-data"),
   resultsDir: join(repoRoot, DEFAULT_RESULTS_DIR),
   input: process.stdin,
+  color: shouldColor(process.stdout.isTTY, process.env),
 });
