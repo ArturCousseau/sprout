@@ -351,55 +351,80 @@ a execução ali, com uma mensagem só.
 
 ## 5. Os modos
 
+Nenhuma linha dos dois modos passa de 111 colunas, para caber na tela da
+apresentação. A largura é a visível, sem os códigos de cor, e os símbolos
+`✓ ✗ ━ · →` ocupam uma coluna cada. A exceção é a linha `resumo:` do Sprout
+com tempo total a partir de 1000 ms, que passa de 111. A gravação com o VHS
+(`Set FontSize 26`, `Set Width 1920`) tem 114 colunas.
+
+As linhas saem coloridas quando a saída vai para um terminal (§8):
+
+- em cinza: o prefixo `[git]`/`[sprout]`, o `→`, os hashes do git, o
+  `(pai = 1)` do Sprout e o tipo da rejeição (`(fetch-first)`);
+- em verde: `✓ aceito`;
+- em vermelho: `✗ REJEITADO` e `✗ rejeitado`;
+- em amarelo: `✗ CONFLITO` e `✗ conflito`;
+- em azul: `pai trocado`;
+- o título de cada execução tem os `━━` em cinza e o texto do meio em
+  negrito; o separador do modo rápido sai inteiro em cinza.
+
+O resto da linha (ids, nomes de arquivo, o `ok` do `pull --rebase`) fica sem
+cor. Sem cor, o texto é o mesmo, caractere por caractere.
+
 ### Passo a passo (cenários A e C)
 
 `pnpm demo:git --cenario A|C --passo` e
 `pnpm demo:sprout --cenario A|C --passo` (#17). A preparação roda logo no
 início, sem pausa e sem linha própria: no git, os repositórios e os commits
 dos dois agentes (§3); no Sprout, o servidor e o `GET` e o `PUT` de cada
-agente (§4). Depois vem um cabeçalho, e o script pausa antes de cada etapa,
+agente (§4). Depois vêm duas linhas: o título da execução
+(`━━ git · cenário A · passo a passo ━━`) e o aviso
+`[git] Enter antes de cada etapa`. Então o script pausa antes de cada etapa,
 inclusive a primeira, esperando um **Enter** do apresentador. Depois da última
 etapa não há pausa: a execução termina. Cada etapa é uma operação real e
-imprime uma linha, com o porquê dentro dela. Os valores vêm da autoridade: no
-git, o hash de 7 caracteres da `main` do repositório central
+imprime uma linha, com o contador da etapa (`2/4` no git, que tem quatro
+etapas; `2/3` no Sprout, que tem três) e o porquê dentro dela. Os valores vêm
+da autoridade: no git, o hash de 7 caracteres da `main` do repositório central
 (`git rev-parse --short=7`); no Sprout, o id da `main` lido com
 `GET /refs/main` depois de cada etapa. Os hashes abaixo são exemplos.
 
 Cenário A no git:
 
 ```
-[git] cenário A, passo a passo: Enter antes de cada etapa
-[git] agente 1 e agente 2 partem da main no commit 3f2a1c9
-[git] agente 1: push                    → aceito, main = 9b81e04
-[git] agente 2: push                    → REJEITADO (a main andou; o git não olha os arquivos)
-[git] agente 2: pull --rebase + push    → aceito, main = 4c7d22a
+━━ git · cenário A · passo a passo ━━
+[git] Enter antes de cada etapa
+[git] 1/4 agente 1 e agente 2 partem da main no commit 3f2a1c9
+[git] 2/4 agente 1: push                    → ✓ aceito, main = 9b81e04
+[git] 3/4 agente 2: push                    → ✗ REJEITADO (a main andou; o git não olha os arquivos)
+[git] 4/4 agente 2: pull --rebase + push    → ✓ aceito, main = 4c7d22a
 ```
 
-No cenário C, a última linha do git é o conflito real, com o `rebase --abort`
-(§3):
+No cenário C, o título diz `cenário C`, e a última linha do git é o conflito
+real, com o `rebase --abort` (§3):
 
 ```
-[git] agente 2: pull --rebase           → CONFLITO em conflito.txt; rebase --abort, main = 9b81e04
+[git] 4/4 agente 2: pull --rebase           → ✗ CONFLITO em conflito.txt; rebase --abort, main = 9b81e04
 ```
 
 Cenário A no Sprout:
 
 ```
-[sprout] cenário A, passo a passo: Enter antes de cada etapa
-[sprout] agente 1 e agente 2 partem da main no changeset 1
-[sprout] agente 1: envia changeset (pai = 1)    → aceito, main = 2
-[sprout] agente 2: envia changeset (pai = 1)    → aceito, pai trocado para 2 (outro arquivo), main = 3
+━━ sprout · cenário A · passo a passo ━━
+[sprout] Enter antes de cada etapa
+[sprout] 1/3 agente 1 e agente 2 partem da main no changeset 1
+[sprout] 2/3 agente 1: envia changeset (pai = 1)    → ✓ aceito, main = 2
+[sprout] 3/3 agente 2: envia changeset (pai = 1)    → ✓ aceito, pai trocado para 2 (outro arquivo), main = 3
 ```
 
-No cenário C, a última linha do Sprout é o `409`:
+No cenário C, o título diz `cenário C`, e a última linha do Sprout é o `409`.
+Com 111 colunas, é a linha mais larga da demo:
 
 ```
-[sprout] agente 2: envia changeset (pai = 1)    → CONFLITO (conflito.txt mudou depois do pai 1), main = 2
+[sprout] 3/3 agente 2: envia changeset (pai = 1)    → ✗ CONFLITO (conflito.txt mudou depois do pai 1), main = 2
 ```
 
-Nenhuma linha passa de 105 colunas, para caber na tela da apresentação. Num
-terminal, o Enter ecoa uma quebra de linha, então as etapas aparecem separadas
-por uma linha em branco.
+Num terminal, o Enter ecoa uma quebra de linha, então as etapas aparecem
+separadas por uma linha em branco.
 
 **Conferência contra o roteiro.** Antes de imprimir a linha, o script confere
 que o resultado real é o do roteiro. No git: os dois agentes partem da `main`
@@ -427,14 +452,50 @@ o modo rápido.
 
 ### Rápido (cenário B)
 
-Os N agentes rodam em paralelo, com o ponto de sincronização. A saída mostra uma
-linha por evento (pode rolar rápido, é o efeito desejado) e termina com o
-resumo daquele sistema, com os mesmos rótulos e valores do placar (§6). O
-formato é este (os números variam de uma execução para outra):
+Os N agentes rodam em paralelo, com o ponto de sincronização. A saída começa
+com o título da execução, impresso depois da preparação e antes de a barreira
+existir, portanto fora do tempo total (§6). Depois vem uma linha por evento
+(pode rolar rápido, é o efeito desejado), cuja ordem varia de uma execução
+para outra. No fim, um separador de `━` da largura do título e o resumo daquele
+sistema, com os mesmos rótulos e valores do placar (§6). O separador e o resumo
+só aparecem quando a execução termina; num erro do harness, nenhum dos dois
+sai. Um trecho do git (os números variam de uma execução para outra):
 
 ```
+━━ git · cenário B · modo rápido ━━
+[git] agente 3: push → ✓ aceito
+[git] agente 7: push → ✗ rejeitado (fetch-first)
+[git] agente 10: push → ✗ rejeitado (ref-lock)
+[git] agente 7: pull --rebase → ok
+…
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [git] resumo: aceitos 10, rejeições 45, tentativas 55, trocas de pai -, conflitos reais 0, tempo total 1047 ms
 ```
+
+No cenário C, o conflito real do git sai assim:
+
+```
+[git] agente 2: pull --rebase → ✗ conflito, rebase --abort
+```
+
+No Sprout, cada agente imprime uma linha só, com o pai que enviou:
+
+```
+━━ sprout · cenário B · modo rápido ━━
+[sprout] agente 1: changeset (pai 1) → ✓ aceito
+[sprout] agente 10: changeset (pai 1) → ✓ aceito, pai trocado para 10
+…
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[sprout] resumo: aceitos 10, rejeições 0, tentativas 10, trocas de pai 9, conflitos reais 0, tempo total 93 ms
+```
+
+E, no cenário C, o `409`:
+
+```
+[sprout] agente 2: changeset (pai 1) → ✗ conflito (conflito.txt)
+```
+
+Na linha do resumo, só o prefixo sai em cinza.
 
 ## 6. O placar
 
@@ -457,6 +518,16 @@ resultados: git 14/11/2026 12:45, sprout 14/11/2026 12:45
 
 _(uma execução no omarchy em 14/11/2026; a média de várias execuções é a
 #21)_
+
+Num terminal (§8), o placar destaca a comparação. O cabeçalho
+(`git`, `sprout`) sai em negrito. Nas linhas `rejeições`, `tentativas` e
+`tempo total`, quando os dois valores mostrados são diferentes, o menor sai em
+verde e o maior em vermelho. O tempo é comparado em milissegundos inteiros,
+como aparece na tabela: `41 ms` contra `41 ms` é empate, mesmo que os valores
+gravados sejam 40,6 e 41,4. Empates e as outras linhas (`aceitos`,
+`trocas de pai`, `conflitos reais`) ficam sem cor, assim como o título
+`Cenário…` e a linha `resultados:`. Os espaços de alinhamento ficam fora das
+cores, e a tabela fica alinhada com ou sem elas.
 
 O placar só lê os dois arquivos de resultados (abaixo) e calcula cada coluna
 com o `summarize`: não roda git nem sobe servidor. O tempo total sai em
@@ -601,6 +672,37 @@ O `demo:placar` lê esses dois arquivos e não grava nada (§6). Sai com:
   stderr para cada arquivo com problema, com o caminho e o comando que o gera
   (por exemplo, `rode pnpm demo:git --cenario B`), e nada no stdout;
 - **2:** cenário ausente ou inválido: mensagem no stderr.
+
+**Cores.** Os três comandos (`demo:git`, `demo:sprout` e `demo:placar`) só
+usam cores quando o stdout é um terminal e a variável `NO_COLOR` está ausente
+ou vazia, como pede o [no-color.org](https://no-color.org). Com a saída
+redirecionada para um arquivo ou um pipe, ou com `NO_COLOR` com qualquer
+valor não vazio (até `0`), o texto sai sem códigos de cor. `NO_COLOR=` (vazio) não desliga as
+cores:
+
+```
+NO_COLOR=1 pnpm demo:placar --cenario B
+NO_COLOR= pnpm demo:placar --cenario B
+pnpm demo:placar --cenario B | cat -v
+```
+
+- o primeiro sai sem cor;
+- o segundo sai com cor;
+- o terceiro sai sem cor: nenhum `^[` (o ESC) na saída.
+
+Verificado à mão em 17/11/2026, num terminal com `tput cols` = 142:
+
+- os sete comandos da demo (passo a passo do A e do C nos dois sistemas,
+  modo rápido do B nos dois e o placar do B) com os textos dos exemplos do
+  §5 e do §6, código de saída 0 nos três do cenário B, cores visíveis, o
+  cinza legível e a linha de 111 colunas do Sprout C inteira;
+- `NO_COLOR=1` sem cor e `NO_COLOR=` (vazio) com cor;
+- com `command cat -v`, nenhum `^[` na saída do `demo:placar --cenario B`, na
+  do `demo:git --cenario A --passo` nem na do `demo:sprout --cenario B`. O
+  `command` é necessário quando `cat` é um alias de outro programa (como o
+  `bat`, que não aceita `-v`);
+- uma gravação com o VHS (114 colunas): as cores aparecem, a linha de 111
+  cabe e o placar mostra o destaque do §6.
 
 Ainda são proposta, e cada nome será definido na issue indicada:
 
