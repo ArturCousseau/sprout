@@ -674,13 +674,17 @@ describe("fast-mode title and separator (#20, D4, P3)", () => {
         "[git] agente 2: pull --rebase → ok",
       ];
       expect(events[0]).toBe(TITLE_A);
+      expect(events.at(-3)).toBe(
+        "[git] main conferida → ✓ 2 commits aceitos na main (arquivos, conteúdo e contagem)",
+      );
       expect(events.at(-2)).toBe(SEPARATOR_A);
-      const middle = events.slice(1, -2);
+      const middle = events.slice(1, -3);
       expect(middle.filter((line) => !possible.includes(line))).toEqual([]);
       // Written by hand: the counts of scenario A are fixed (R11 of #18: 2
       // accepted, 1 rejection, 3 attempts); only the order varies. Title, 2
-      // accepted, 1 rejected, 1 rebase, separator and summary: 7 lines.
-      expect(events).toHaveLength(7);
+      // accepted, 1 rejected, 1 rebase, main check (#19), separator and
+      // summary: 8 lines.
+      expect(events).toHaveLength(8);
       expect(
         middle.filter((line) => line.endsWith("push → ✓ aceito")).length,
       ).toBe(2);
@@ -721,14 +725,131 @@ describe("fast-mode title and separator (#20, D4, P3)", () => {
       expect(events[0]).toBe(
         "\x1b[2m━━\x1b[22m \x1b[1mgit · cenário A · modo rápido\x1b[22m \x1b[2m━━\x1b[22m",
       );
+      expect(events.at(-3)).toBe(
+        "\x1b[2m[git]\x1b[22m main conferida \x1b[2m→\x1b[22m \x1b[32m✓ 2 commits aceitos\x1b[39m na main (arquivos, conteúdo e contagem)",
+      );
       expect(events.at(-2)).toBe(`\x1b[2m${SEPARATOR_A}\x1b[22m`);
-      expect(events).toHaveLength(7);
+      expect(events).toHaveLength(8);
       expect(
         events
-          .slice(1, -2)
+          .slice(1, -3)
           .map(stripAnsi)
           .filter((line) => !possible.includes(line)),
       ).toEqual([]);
+    },
+    GIT_TIMEOUT,
+  );
+});
+
+/** Matches exactly `message`, not a part of it. */
+function exactly(message: string): RegExp {
+  return new RegExp(`^${message.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
+}
+
+describe("main check at the end of a fast run (#19)", () => {
+  // Written by hand: what readMain returns instead of the real central repo.
+  // A good scenario A main is README + agente-1.txt + agente-2.txt, 3 commits.
+  it.each([
+    [
+      "missing",
+      {
+        files: new Map([
+          ["README.md", "Repositório central da demo do Sprout.\n"],
+          ["agente-1.txt", "agente 1\n"],
+        ]),
+        commits: 3,
+      },
+      "main check: missing agente-2.txt",
+    ],
+    [
+      "extra",
+      {
+        files: new Map([
+          ["README.md", "Repositório central da demo do Sprout.\n"],
+          ["agente-1.txt", "agente 1\n"],
+          ["agente-2.txt", "agente 2\n"],
+          ["intruso.txt", "intruso\n"],
+        ]),
+        commits: 3,
+      },
+      "main check: extra intruso.txt",
+    ],
+    [
+      "content",
+      {
+        files: new Map([
+          ["README.md", "Repositório central da demo do Sprout.\n"],
+          ["agente-1.txt", "agente 1\n"],
+          ["agente-2.txt", "agente 1\n"],
+        ]),
+        commits: 3,
+      },
+      "main check: content differs: agente-2.txt",
+    ],
+    [
+      "commits",
+      {
+        files: new Map([
+          ["README.md", "Repositório central da demo do Sprout.\n"],
+          ["agente-1.txt", "agente 1\n"],
+          ["agente-2.txt", "agente 2\n"],
+        ]),
+        commits: 4,
+      },
+      "main check: commits: expected 3, got 4",
+    ],
+  ])(
+    "GX1 scenario A, %s → HarnessError, no JSON, no line, no separator",
+    async (_label, main, message) => {
+      const events: string[] = [];
+
+      const running = runGitScenario({
+        scenario: SCENARIOS.A,
+        baseDir: base,
+        resultsDir: join(base, "resultados"),
+        log: (line) => events.push(line),
+        readMain: () => Promise.resolve(main),
+      });
+
+      await expect(running).rejects.toThrow(HarnessError);
+      await expect(running).rejects.toThrow(exactly(message));
+      expect(existsSync(join(base, "resultados", "git-A.json"))).toBe(false);
+      expect(events).not.toContain(SEPARATOR_A);
+      expect(
+        events.filter((line) => line.includes("main conferida")),
+      ).toHaveLength(0);
+    },
+    GIT_TIMEOUT,
+  );
+
+  // Written by hand. The separator of B and C is SEPARATOR_A: the titles
+  // differ only in the scenario letter, so they are as wide.
+  it.each([
+    [
+      "B",
+      "[git] main conferida → ✓ 10 commits aceitos na main (arquivos, conteúdo e contagem)",
+    ],
+    [
+      "C",
+      "[git] main conferida → ✓ 1 commit aceito na main (arquivos, conteúdo e contagem)",
+    ],
+  ] as const)(
+    "GX2 scenario %s: the main check line right before the separator",
+    async (id, line) => {
+      const events: string[] = [];
+
+      await runGitScenario({
+        scenario: SCENARIOS[id],
+        baseDir: base,
+        resultsDir: join(base, "resultados"),
+        log: (event) => events.push(event),
+      });
+
+      expect(events.at(-3)).toBe(line);
+      expect(events.at(-2)).toBe(SEPARATOR_A);
+      expect(
+        events.filter((event) => event.includes("main conferida")),
+      ).toHaveLength(1);
     },
     GIT_TIMEOUT,
   );

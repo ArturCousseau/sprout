@@ -13,7 +13,12 @@ import {
   localGitConfig,
 } from "./git.js";
 import { HarnessError } from "./harness-error.js";
-import type { MainState } from "./main-check.js";
+import {
+  checkMain,
+  expectedMain,
+  formatMainLine,
+  type MainState,
+} from "./main-check.js";
 import { type AgentResult, type RejectionType, summarize } from "./metrics.js";
 import { resultPath, type RunResult, writeResult } from "./results.js";
 import { fileFor, type Scenario } from "./scenarios.js";
@@ -255,6 +260,11 @@ export interface RunGitScenarioOptions extends PrepareGitRunOptions {
   checkAttempts?: (totalAttempts: number, n: number) => void;
   /** Colors on the lines (D2 of #20). Off by default, as in the tests. */
   color?: boolean;
+  /**
+   * Reads the central repo's main for the check at the end (#19, D8).
+   * readGitMain by default; tests inject a wrong main.
+   */
+  readMain?: (central: string) => Promise<MainState>;
 }
 
 /**
@@ -270,6 +280,7 @@ export async function runGitScenario({
   log = console.log,
   checkAttempts = checkGitAttempts,
   color = false,
+  readMain = readGitMain,
 }: RunGitScenarioOptions): Promise<RunResult> {
   await prepareGitRun({ baseDir, resultsDir, scenario });
   const clones: string[] = [];
@@ -315,10 +326,23 @@ export async function runGitScenario({
   if (failures.length > 0) {
     throw new HarnessError(failures.join("\n"));
   }
+
+  // The main check (#19), after allSettled: every agent's endMs is already
+  // taken inside runAgent, so this is outside the measured time (D3). Before
+  // writeResult: a divergence leaves no JSON (D4).
+  const expected = expectedMain(
+    scenario,
+    agents,
+    new Map([["README.md", README]]),
+  );
+  checkMain(expected, await readMain(join(baseDir, "central.git")));
+  const summary = summarize(agents);
+  log(formatMainLine("git", summary.accepted, color));
+
   const run: RunResult = { system: "git", scenario: scenario.id, agents };
   await writeResult(resultsDir, run);
   log(formatSeparator("git", scenario.id, color));
-  log(formatSummaryLine("git", summarize(agents), color));
+  log(formatSummaryLine("git", summary, color));
   return run;
 }
 

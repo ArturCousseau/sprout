@@ -115,6 +115,36 @@ describe("criterion 1: demo:git exit codes", () => {
     },
     GIT_TIMEOUT,
   );
+
+  it(
+    "GC1 main check divergence → stderr and exit 1, no JSON (#19)",
+    async () => {
+      const { io, written, codes } = fakeIo();
+
+      // Written by hand: a scenario A main without agente-2.txt.
+      const running = runGitCli(["--cenario", "A"], io, {
+        baseDir: base,
+        resultsDir: results,
+        color: false,
+        log: () => {},
+        input: new PassThrough(),
+        readMain: () =>
+          Promise.resolve({
+            files: new Map([
+              ["README.md", "Repositório central da demo do Sprout.\n"],
+              ["agente-1.txt", "agente 1\n"],
+            ]),
+            commits: 3,
+          }),
+      });
+
+      await expect(running).rejects.toThrow(ExitCalled);
+      expect(codes).toEqual([1]);
+      expect(written).toEqual(["demo:git: main check: missing agente-2.txt\n"]);
+      expect(existsSync(join(results, "git-A.json"))).toBe(false);
+    },
+    GIT_TIMEOUT,
+  );
 });
 
 /** An input with `text` already written and still open, like a terminal. */
