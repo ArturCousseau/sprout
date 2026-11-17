@@ -18,6 +18,8 @@ export interface RunGitStepsOptions extends PrepareGitRunOptions {
   log?: (line: string) => void;
   /** Waits for the presenter before each step (D4). Tests inject their own. */
   pause: () => Promise<void>;
+  /** Colors on the lines (D2 of #20). Off by default, as in the tests. */
+  color?: boolean;
 }
 
 // Column of the arrow: the longest action, "agente 2: pull --rebase + push"
@@ -94,6 +96,7 @@ export async function runGitSteps({
   resultsDir,
   log = console.log,
   pause,
+  color = false,
 }: RunGitStepsOptions): Promise<void> {
   await prepareGitRun({ baseDir, resultsDir, scenario });
   const central = join(baseDir, "central.git");
@@ -118,14 +121,14 @@ export async function runGitSteps({
     return classifyPush(result.stdout, result.code);
   };
 
-  // Every line goes through paint (D1 of #20). Still without color here.
-  const paint = painter(false);
+  // Every line goes through paint (D1 of #20): plain text when color is off.
+  const paint = painter(color);
   const accepted = async (): Promise<string> =>
     `${paint("green", "✓ aceito")}, main = ${paint("dim", await main())}`;
 
   // The title and the Enter line replace the one-line header of R9 of #17
   // (D4, R12 of #20).
-  log(formatRunTitle("git", scenario.id, "passo a passo"));
+  log(formatRunTitle("git", scenario.id, "passo a passo", color));
   log(`${paint("dim", "[git]")} Enter antes de cada etapa`);
 
   await pause();

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { visibleWidth } from "./color.js";
+import { stripAnsi, visibleWidth } from "./color.js";
 import { gitOk } from "./git-agents.js";
 import { expectFetchFirst, runGitSteps } from "./git-steps.js";
 import { identityGitConfig } from "./git.js";
@@ -145,6 +145,77 @@ describe("runGitSteps: lines (#17, D3, D5)", () => {
       const clone = join(base, "git-agente-2");
       expect(await git(["-C", clone, "status", "--porcelain"])).toBe("");
       expect(existsSync(join(clone, ".git", "rebase-merge"))).toBe(false);
+    },
+    GIT_TIMEOUT,
+  );
+});
+
+describe("runGitSteps: lines with color (#20, D9)", () => {
+  it(
+    "scenario A: the codes of D1 on every line, written by hand, and the same text without them",
+    async () => {
+      const { events, log, pause } = recorder();
+
+      await runGitSteps({
+        scenario: SCENARIOS.A,
+        baseDir: base,
+        resultsDir: results,
+        log,
+        pause,
+        color: true,
+      });
+
+      // Checked before reading the central repo, which may not exist.
+      expect(events).toHaveLength(6);
+      const initial = await central("main~2");
+      const first = await central("main~1");
+      const last = await central("main");
+      // Written by hand: section 2 of the plan of #20.
+      expect(events).toEqual([
+        "\x1b[2m━━\x1b[22m \x1b[1mgit · cenário A · passo a passo\x1b[22m \x1b[2m━━\x1b[22m",
+        "\x1b[2m[git]\x1b[22m Enter antes de cada etapa",
+        `\x1b[2m[git]\x1b[22m 1/4 agente 1 e agente 2 partem da main no commit \x1b[2m${initial}\x1b[22m`,
+        `\x1b[2m[git]\x1b[22m 2/4 agente 1: push                    \x1b[2m→\x1b[22m \x1b[32m✓ aceito\x1b[39m, main = \x1b[2m${first}\x1b[22m`,
+        "\x1b[2m[git]\x1b[22m 3/4 agente 2: push                    \x1b[2m→\x1b[22m \x1b[31m✗ REJEITADO\x1b[39m (a main andou; o git não olha os arquivos)",
+        `\x1b[2m[git]\x1b[22m 4/4 agente 2: pull --rebase + push    \x1b[2m→\x1b[22m \x1b[32m✓ aceito\x1b[39m, main = \x1b[2m${last}\x1b[22m`,
+      ]);
+      // Without the codes, the plain lines of section 1 (R15).
+      expect(events.map(stripAnsi)).toEqual([
+        "━━ git · cenário A · passo a passo ━━",
+        "[git] Enter antes de cada etapa",
+        `[git] 1/4 agente 1 e agente 2 partem da main no commit ${initial}`,
+        `[git] 2/4 agente 1: push                    → ✓ aceito, main = ${first}`,
+        "[git] 3/4 agente 2: push                    → ✗ REJEITADO (a main andou; o git não olha os arquivos)",
+        `[git] 4/4 agente 2: pull --rebase + push    → ✓ aceito, main = ${last}`,
+      ]);
+      expect(events.filter((line) => visibleWidth(line) > MAX_COLUMNS)).toEqual(
+        [],
+      );
+    },
+    GIT_TIMEOUT,
+  );
+
+  it(
+    "scenario C: the conflict line in yellow",
+    async () => {
+      const { events, log, pause } = recorder();
+
+      await runGitSteps({
+        scenario: SCENARIOS.C,
+        baseDir: base,
+        resultsDir: results,
+        log,
+        pause,
+        color: true,
+      });
+
+      // Checked before reading the central repo, which may not exist.
+      expect(events).toHaveLength(6);
+      const first = await central("main");
+      // Written by hand: section 2 of the plan of #20.
+      expect(events.at(-1)).toBe(
+        `\x1b[2m[git]\x1b[22m 4/4 agente 2: pull --rebase           \x1b[2m→\x1b[22m \x1b[33m✗ CONFLITO\x1b[39m em conflito.txt; rebase --abort, main = \x1b[2m${first}\x1b[22m`,
+      );
     },
     GIT_TIMEOUT,
   );
