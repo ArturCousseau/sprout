@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { type Paint, painter } from "./color.js";
 import {
   commitAgents,
   gitOk,
@@ -53,13 +54,30 @@ export function expectFetchFirst(result: PushResult): void {
   expectStep(3, "agente 2: push", "fetch-first", result);
 }
 
-/** `[git] 2/4 ` plus the text: the prefix and the step counter (P1 of #20). */
-function counted(step: number, text: string): string {
-  return `[git] ${step}/${STEPS} ${text}`;
+/**
+ * `[git] 2/4 ` plus the text: the prefix (dim) and the step counter (P1 of
+ * #20). `text` may already carry painted pieces.
+ */
+function counted(paint: Paint, step: number, text: string): string {
+  return `${paint("dim", "[git]")} ${step}/${STEPS} ${text}`;
 }
 
-function stepLine(step: number, action: string, result: string): string {
-  return counted(step, `${action.padEnd(ACTION_WIDTH)}→ ${result}`);
+/**
+ * One step line. The action is padded while still plain and the arrow is
+ * painted after it (R9 of #20): codes never enter the padEnd.
+ */
+function stepLine(
+  paint: Paint,
+  step: number,
+  action: string,
+  result: string,
+): string {
+  const arrow = paint("dim", "→");
+  return counted(
+    paint,
+    step,
+    `${action.padEnd(ACTION_WIDTH)}${arrow} ${result}`,
+  );
 }
 
 /**
@@ -100,29 +118,35 @@ export async function runGitSteps({
     return classifyPush(result.stdout, result.code);
   };
 
+  // Every line goes through paint (D1 of #20). Still without color here.
+  const paint = painter(false);
+  const accepted = async (): Promise<string> =>
+    `${paint("green", "✓ aceito")}, main = ${paint("dim", await main())}`;
+
   // The title and the Enter line replace the one-line header of R9 of #17
   // (D4, R12 of #20).
   log(formatRunTitle("git", scenario.id, "passo a passo"));
-  log("[git] Enter antes de cada etapa");
+  log(`${paint("dim", "[git]")} Enter antes de cada etapa`);
 
   await pause();
   const start = await rev(central, "main");
   const action1 = "agente 1 e agente 2 partem da main";
   expectStep(1, action1, start, await rev(first, "HEAD~1"));
   expectStep(1, action1, start, await rev(second, "HEAD~1"));
-  log(counted(1, `${action1} no commit ${await main()}`));
+  log(counted(paint, 1, `${action1} no commit ${paint("dim", await main())}`));
 
   await pause();
   expectStep(2, "agente 1: push", "accepted", await push(first));
-  log(stepLine(2, "agente 1: push", `✓ aceito, main = ${await main()}`));
+  log(stepLine(paint, 2, "agente 1: push", await accepted()));
 
   await pause();
   expectFetchFirst(await push(second));
   log(
     stepLine(
+      paint,
       3,
       "agente 2: push",
-      "✗ REJEITADO (a main andou; o git não olha os arquivos)",
+      `${paint("red", "✗ REJEITADO")} (a main andou; o git não olha os arquivos)`,
     ),
   );
 
@@ -136,7 +160,7 @@ export async function runGitSteps({
   expectStep(4, action4, scenario.sameFile ? "conflict" : "rebased", pulled);
   if (!scenario.sameFile) {
     expectStep(4, action4, "accepted", await push(second));
-    log(stepLine(4, action4, `✓ aceito, main = ${await main()}`));
+    log(stepLine(paint, 4, action4, await accepted()));
     return;
   }
   // The conflicting paths, read from git before the abort clears them (P10).
@@ -156,9 +180,10 @@ export async function runGitSteps({
   );
   log(
     stepLine(
+      paint,
       4,
       action4,
-      `✗ CONFLITO em ${conflicts}; rebase --abort, main = ${await main()}`,
+      `${paint("yellow", "✗ CONFLITO")} em ${conflicts}; rebase --abort, main = ${paint("dim", await main())}`,
     ),
   );
 }
