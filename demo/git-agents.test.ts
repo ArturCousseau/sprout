@@ -5,7 +5,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { gitOk, prepareGitRun, runGit, runGitScenario } from "./git-agents.js";
+import {
+  formatGitEvent,
+  type GitEvent,
+  gitOk,
+  prepareGitRun,
+  runGit,
+  runGitScenario,
+} from "./git-agents.js";
 import { checkGitAttempts } from "./git.js";
 import { HarnessError } from "./harness-error.js";
 import { readResult, type RunResult } from "./results.js";
@@ -208,6 +215,11 @@ describe("criterion 3: isolated git config", () => {
   });
 });
 
+// Written by hand: the fast-mode title of scenario A and its separator, 35 ━
+// (section 1 of the plan of #20).
+const TITLE_A = "━━ git · cenário A · modo rápido ━━";
+const SEPARATOR_A = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+
 /** Runs a scenario in `base` with the event lines silenced. */
 function runScenario(id: ScenarioId): Promise<RunResult> {
   return runGitScenario({
@@ -320,7 +332,9 @@ describe("criterion 5: attempt ceiling", () => {
       // The run waited for the push in flight (allSettled, R1).
       const pushes = snapshot.filter((line) => line.includes("push →"));
       expect(pushes.length).toBe(1);
-      expect(pushes[0]).toContain("push → aceito");
+      expect(pushes[0]).toContain("push → ✓ aceito");
+      // The separator only comes with the summary (P3 of #20).
+      expect(snapshot).not.toContain(SEPARATOR_A);
       expect(existsSync(join(results, "git-A.json"))).toBe(false);
     },
     GIT_TIMEOUT,
@@ -451,6 +465,79 @@ describe("summary line (#18, R11)", () => {
         /^\[git\] resumo: aceitos 2, rejeições 1, tentativas 3, trocas de pai -, conflitos reais 0, tempo total \d+ ms$/,
       );
       expect(events.filter((line) => line.includes("resumo"))).toHaveLength(1);
+    },
+    GIT_TIMEOUT,
+  );
+});
+
+describe("formatGitEvent (#20, D4)", () => {
+  // Written by hand: one line of each kind from section 1 of the plan of #20,
+  // agent 10 as the worst case of digits.
+  it.each<[number, GitEvent, string]>([
+    [3, { kind: "accepted" }, "[git] agente 3: push → ✓ aceito"],
+    [
+      7,
+      { kind: "rejected", type: "fetch-first" },
+      "[git] agente 7: push → ✗ rejeitado (fetch-first)",
+    ],
+    [
+      10,
+      { kind: "rejected", type: "ref-lock" },
+      "[git] agente 10: push → ✗ rejeitado (ref-lock)",
+    ],
+    [7, { kind: "rebased" }, "[git] agente 7: pull --rebase → ok"],
+    [
+      2,
+      { kind: "conflict" },
+      "[git] agente 2: pull --rebase → ✗ conflito, rebase --abort",
+    ],
+  ])("agent %d, %o", (agent, event, line) => {
+    expect(formatGitEvent(agent, event)).toBe(line);
+  });
+});
+
+describe("fast-mode title and separator (#20, D4, P3)", () => {
+  it(
+    "scenario A: title first, separator before the summary, known lines between",
+    async () => {
+      const events: string[] = [];
+
+      await runGitScenario({
+        scenario: SCENARIOS.A,
+        baseDir: base,
+        resultsDir: join(base, "resultados"),
+        log: (line) => events.push(line),
+      });
+
+      // Written by hand: every line an agent of scenario A can print. Which
+      // ones show up depends on the race, so only membership is checked.
+      const possible = [
+        "[git] agente 1: push → ✓ aceito",
+        "[git] agente 1: push → ✗ rejeitado (fetch-first)",
+        "[git] agente 1: push → ✗ rejeitado (ref-lock)",
+        "[git] agente 1: pull --rebase → ok",
+        "[git] agente 2: push → ✓ aceito",
+        "[git] agente 2: push → ✗ rejeitado (fetch-first)",
+        "[git] agente 2: push → ✗ rejeitado (ref-lock)",
+        "[git] agente 2: pull --rebase → ok",
+      ];
+      expect(events[0]).toBe(TITLE_A);
+      expect(events.at(-2)).toBe(SEPARATOR_A);
+      const middle = events.slice(1, -2);
+      expect(middle.filter((line) => !possible.includes(line))).toEqual([]);
+      // Written by hand: the counts of scenario A are fixed (R11 of #18: 2
+      // accepted, 1 rejection, 3 attempts); only the order varies. Title, 2
+      // accepted, 1 rejected, 1 rebase, separator and summary: 7 lines.
+      expect(events).toHaveLength(7);
+      expect(
+        middle.filter((line) => line.endsWith("push → ✓ aceito")).length,
+      ).toBe(2);
+      expect(
+        middle.filter((line) => line.includes("push → ✗ rejeitado")).length,
+      ).toBe(1);
+      expect(
+        middle.filter((line) => line.endsWith("pull --rebase → ok")).length,
+      ).toBe(1);
     },
     GIT_TIMEOUT,
   );

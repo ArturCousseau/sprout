@@ -15,7 +15,11 @@ import { HarnessError } from "./harness-error.js";
 import { type AgentResult, type RejectionType, summarize } from "./metrics.js";
 import { resultPath, type RunResult, writeResult } from "./results.js";
 import { fileFor, type Scenario } from "./scenarios.js";
-import { formatSummaryLine } from "./scoreboard.js";
+import {
+  formatRunTitle,
+  formatSeparator,
+  formatSummaryLine,
+} from "./scoreboard.js";
 
 /** What one git command produced. */
 export interface GitRun {
@@ -203,6 +207,10 @@ export async function runGitScenario({
   // waiting forever for an arrival that never comes.
   await commitAgents(scenario, clones);
 
+  // The title comes after the preparation and before the barrier exists, so
+  // it is never inside the measured time (P3 of #20).
+  log(formatRunTitle("git", scenario.id, "modo rápido"));
+
   // The concurrent part starts here.
   const barrier = createBarrier(scenario.agents);
   // One counter for the whole run, shared by every agent (D6).
@@ -233,6 +241,7 @@ export async function runGitScenario({
   }
   const run: RunResult = { system: "git", scenario: scenario.id, agents };
   await writeResult(resultsDir, run);
+  log(formatSeparator("git", scenario.id));
   log(formatSummaryLine("git", summarize(agents)));
   return run;
 }
@@ -312,13 +321,13 @@ export function formatGitEvent(agent: number, event: GitEvent): string {
   const prefix = `[git] agente ${agent}:`;
   switch (event.kind) {
     case "accepted":
-      return `${prefix} push → aceito`;
+      return `${prefix} push → ✓ aceito`;
     case "rejected":
-      return `${prefix} push → rejeitado (${event.type})`;
+      return `${prefix} push → ✗ rejeitado (${event.type})`;
     case "rebased":
       return `${prefix} pull --rebase → ok`;
     case "conflict":
-      return `${prefix} pull --rebase → conflito, rebase --abort`;
+      return `${prefix} pull --rebase → ✗ conflito, rebase --abort`;
   }
 }
 

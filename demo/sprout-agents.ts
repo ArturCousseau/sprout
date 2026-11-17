@@ -5,7 +5,11 @@ import { HarnessError } from "./harness-error.js";
 import { type AgentResult, summarize } from "./metrics.js";
 import { resultPath, type RunResult, writeResult } from "./results.js";
 import { fileFor, type Scenario } from "./scenarios.js";
-import { formatSummaryLine } from "./scoreboard.js";
+import {
+  formatRunTitle,
+  formatSeparator,
+  formatSummaryLine,
+} from "./scoreboard.js";
 import {
   checkStatus,
   parseAccepted,
@@ -70,6 +74,7 @@ export async function runSproutScenario({
 
   const run: RunResult = { system: "sprout", scenario: scenario.id, agents };
   await writeResult(resultsDir, run);
+  log(formatSeparator("sprout", scenario.id));
   log(formatSummaryLine("sprout", summarize(agents)));
   return run;
 }
@@ -89,6 +94,10 @@ async function runAgents(
   // exists (D5): a request that fails here throws before any agent waits, so
   // no agent is left waiting forever for an arrival that never comes.
   const prepared = await prepareAgents(scenario, url, send);
+
+  // The title comes after the preparation and before the barrier exists, so
+  // it is never inside the measured time (P3 of #20).
+  log(formatRunTitle("sprout", scenario.id, "modo rápido"));
 
   // The concurrent part starts here.
   const barrier = createBarrier(scenario.agents);
@@ -232,11 +241,11 @@ export function formatSproutEvent(
 ): string {
   const prefix = `[sprout] agente ${agent}: changeset (pai ${parent}) →`;
   if (outcome.kind === "conflict") {
-    return `${prefix} conflito (${outcome.conflicts.join(", ")})`;
+    return `${prefix} ✗ conflito (${outcome.conflicts.join(", ")})`;
   }
   const reparented = outcome.newParent !== parent;
   return (
-    `${prefix} aceito` +
+    `${prefix} ✓ aceito` +
     (reparented ? `, pai trocado para ${outcome.newParent}` : "")
   );
 }

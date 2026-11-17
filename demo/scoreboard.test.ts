@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { visibleWidth } from "./color.js";
 import type { RunSummary } from "./metrics.js";
 import { SCENARIOS } from "./scenarios.js";
 import {
@@ -91,6 +92,30 @@ describe("formatSummaryLine (R8)", () => {
       "[sprout] resumo: aceitos 10, rejeições 0, tentativas 10, trocas de pai 9, conflitos reais 0, tempo total 110 ms",
     );
   });
+
+  // Guard R7 of #20: the worst case that still fits the 111-column ceiling,
+  // git up to 9999 ms and Sprout up to 999 ms. Green when written; its red
+  // is checked by mutation M9.
+  it.each([
+    [
+      "git",
+      { ...gitB, totalMs: 9999 },
+      "[git] resumo: aceitos 10, rejeições 45, tentativas 55, trocas de pai -, conflitos reais 0, tempo total 9999 ms",
+    ],
+    [
+      "sprout",
+      { ...sproutB, totalMs: 999 },
+      "[sprout] resumo: aceitos 10, rejeições 0, tentativas 10, trocas de pai 9, conflitos reais 0, tempo total 999 ms",
+    ],
+  ] as const)(
+    "R7 worst case, %s: fits 111 columns",
+    (system, summary, line) => {
+      const summaryLine = formatSummaryLine(system, summary);
+
+      expect(summaryLine).toBe(line);
+      expect(visibleWidth(summaryLine)).toBeLessThanOrEqual(111);
+    },
+  );
 });
 
 describe("scenarioTitle (D2, C2)", () => {
