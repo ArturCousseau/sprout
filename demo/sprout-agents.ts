@@ -205,20 +205,40 @@ async function runAgent({
     );
     const endMs = performance.now() - release; // after the body is read (R12)
     const reparented = newParent !== parent;
-    log(
-      `[sprout] agente ${agent}: changeset (pai ${parent}) → aceito` +
-        (reparented ? `, pai trocado para ${newParent}` : ""),
-    );
+    log(formatSproutEvent(agent, parent, { kind: "accepted", newParent }));
     return { ...result, outcome: "accepted", reparented, endMs };
   }
   const conflicts = parseConflicts(
     await readJson(response, "postChangesets 409"),
   );
   const endMs = performance.now() - release;
-  log(
-    `[sprout] agente ${agent}: changeset (pai ${parent}) → conflito (${conflicts.join(", ")})`,
-  );
+  log(formatSproutEvent(agent, parent, { kind: "conflict", conflicts }));
   return { ...result, outcome: "conflict", reparented: false, endMs };
+}
+
+/** The server's answer to one agent's POST in the fast mode. */
+export type SproutOutcome =
+  | { kind: "accepted"; newParent: number }
+  | { kind: "conflict"; conflicts: string[] };
+
+/**
+ * The event line of `agent`, which sent `parent`, in the fast mode
+ * (docs/demo.md §4). An accepted changeset whose parent changed says so.
+ */
+export function formatSproutEvent(
+  agent: number,
+  parent: number,
+  outcome: SproutOutcome,
+): string {
+  const prefix = `[sprout] agente ${agent}: changeset (pai ${parent}) →`;
+  if (outcome.kind === "conflict") {
+    return `${prefix} conflito (${outcome.conflicts.join(", ")})`;
+  }
+  const reparented = outcome.newParent !== parent;
+  return (
+    `${prefix} aceito` +
+    (reparented ? `, pai trocado para ${outcome.newParent}` : "")
+  );
 }
 
 /**

@@ -282,21 +282,43 @@ async function runAgent({
     ]);
     const pushed = withStderr(push, () => classifyPush(push.stdout, push.code));
     if (pushed === "accepted") {
-      log(`[git] agente ${agent}: push → aceito`);
+      log(formatGitEvent(agent, { kind: "accepted" }));
       return finish("accepted");
     }
     rejections[pushed] = (rejections[pushed] ?? 0) + 1;
-    log(`[git] agente ${agent}: push → rejeitado (${pushed})`);
+    log(formatGitEvent(agent, { kind: "rejected", type: pushed }));
 
     const pull = await runGit(["-C", clone, "pull", "--rebase"]);
     const rebasing = existsSync(join(clone, ".git", "rebase-merge"));
     const pulled = withStderr(pull, () => classifyPull(pull.code, rebasing));
     if (pulled === "conflict") {
       await gitOk(["-C", clone, "rebase", "--abort"]);
-      log(`[git] agente ${agent}: pull --rebase → conflito, rebase --abort`);
+      log(formatGitEvent(agent, { kind: "conflict" }));
       return finish("conflict");
     }
-    log(`[git] agente ${agent}: pull --rebase → ok`);
+    log(formatGitEvent(agent, { kind: "rebased" }));
+  }
+}
+
+/** One fast-mode event of a git agent: a push or a pull --rebase result. */
+export type GitEvent =
+  | { kind: "accepted" }
+  | { kind: "rejected"; type: RejectionType }
+  | { kind: "rebased" }
+  | { kind: "conflict" };
+
+/** The event line of `agent` in the fast mode (docs/demo.md §3). */
+export function formatGitEvent(agent: number, event: GitEvent): string {
+  const prefix = `[git] agente ${agent}:`;
+  switch (event.kind) {
+    case "accepted":
+      return `${prefix} push → aceito`;
+    case "rejected":
+      return `${prefix} push → rejeitado (${event.type})`;
+    case "rebased":
+      return `${prefix} pull --rebase → ok`;
+    case "conflict":
+      return `${prefix} pull --rebase → conflito, rebase --abort`;
   }
 }
 
