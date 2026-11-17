@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { stripAnsi, visibleWidth } from "./color.js";
 import type { RunSummary } from "./metrics.js";
 import { SCENARIOS } from "./scenarios.js";
 import {
   formatColumn,
+  formatRunTitle,
   formatScoreboard,
+  formatSeparator,
   formatSummaryLine,
   formatTable,
   formatTimestamp,
@@ -89,6 +92,46 @@ describe("formatSummaryLine (R8)", () => {
       "[sprout] resumo: aceitos 10, rejeições 0, tentativas 10, trocas de pai 9, conflitos reais 0, tempo total 110 ms",
     );
   });
+
+  // Written by hand: only the prefix is dim (L3 of #20).
+  it.each([
+    [
+      "git",
+      gitB,
+      "\x1b[2m[git]\x1b[22m resumo: aceitos 10, rejeições 45, tentativas 55, trocas de pai -, conflitos reais 0, tempo total 1213 ms",
+    ],
+    [
+      "sprout",
+      sproutB,
+      "\x1b[2m[sprout]\x1b[22m resumo: aceitos 10, rejeições 0, tentativas 10, trocas de pai 9, conflitos reais 0, tempo total 110 ms",
+    ],
+  ] as const)("%s with color: dim prefix", (system, summary, line) => {
+    expect(formatSummaryLine(system, summary, true)).toBe(line);
+  });
+
+  // Guard R7 of #20: the worst case that still fits the 111-column ceiling,
+  // git up to 9999 ms and Sprout up to 999 ms. Green when written; its red
+  // is checked by mutation M9.
+  it.each([
+    [
+      "git",
+      { ...gitB, totalMs: 9999 },
+      "[git] resumo: aceitos 10, rejeições 45, tentativas 55, trocas de pai -, conflitos reais 0, tempo total 9999 ms",
+    ],
+    [
+      "sprout",
+      { ...sproutB, totalMs: 999 },
+      "[sprout] resumo: aceitos 10, rejeições 0, tentativas 10, trocas de pai 9, conflitos reais 0, tempo total 999 ms",
+    ],
+  ] as const)(
+    "R7 worst case, %s: fits 111 columns",
+    (system, summary, line) => {
+      const summaryLine = formatSummaryLine(system, summary);
+
+      expect(summaryLine).toBe(line);
+      expect(visibleWidth(summaryLine)).toBeLessThanOrEqual(111);
+    },
+  );
 });
 
 describe("scenarioTitle (D2, C2)", () => {
@@ -98,6 +141,50 @@ describe("scenarioTitle (D2, C2)", () => {
     ["C", "Cenário C: 2 agentes, mesmo arquivo"],
   ] as const)("scenario %s", (id, title) => {
     expect(scenarioTitle(SCENARIOS[id])).toBe(title);
+  });
+});
+
+describe("formatRunTitle (#20, D4)", () => {
+  // Written by hand: the titles of section 1 of the plan of #20.
+  it.each([
+    ["git", "A", "passo a passo", "━━ git · cenário A · passo a passo ━━"],
+    [
+      "sprout",
+      "C",
+      "passo a passo",
+      "━━ sprout · cenário C · passo a passo ━━",
+    ],
+    ["git", "B", "modo rápido", "━━ git · cenário B · modo rápido ━━"],
+    ["sprout", "B", "modo rápido", "━━ sprout · cenário B · modo rápido ━━"],
+  ] as const)("%s %s %s, no color", (system, scenario, mode, title) => {
+    expect(formatRunTitle(system, scenario, mode)).toBe(title);
+  });
+
+  it("with color: dim ━━ and bold text, side by side, never nested", () => {
+    expect(formatRunTitle("git", "A", "passo a passo", true)).toBe(
+      "\x1b[2m━━\x1b[22m \x1b[1mgit · cenário A · passo a passo\x1b[22m \x1b[2m━━\x1b[22m",
+    );
+  });
+});
+
+describe("formatSeparator (#20, D4)", () => {
+  // Written by hand: as wide as the fast-mode title of the same system.
+  it("git: 35 ━, the width of its title", () => {
+    expect(formatSeparator("git", "B")).toBe(
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    );
+  });
+
+  it("sprout: 38 ━, the width of its title", () => {
+    expect(formatSeparator("sprout", "B")).toBe(
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    );
+  });
+
+  it("with color: the whole separator dim", () => {
+    expect(formatSeparator("git", "B", true)).toBe(
+      "\x1b[2m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[22m",
+    );
   });
 });
 
@@ -127,6 +214,64 @@ describe("formatTable (D2, R9)", () => {
       "tempo total        41 ms      5 ms",
     ]);
   });
+
+  it("scenario B with color: bold header, lower value green, higher red (D8)", () => {
+    // Written by hand: section 2 of the plan of #20, with the times of gitB
+    // and sproutB. The padStart spaces stay outside the codes (R9).
+    expect(formatTable(gitB, sproutB, true)).toEqual([
+      "                       \x1b[1mgit\x1b[22m    \x1b[1msprout\x1b[22m",
+      "aceitos                 10        10",
+      "rejeições               \x1b[31m45\x1b[39m         \x1b[32m0\x1b[39m",
+      "tentativas              \x1b[31m55\x1b[39m        \x1b[32m10\x1b[39m",
+      "trocas de pai            -         9",
+      "conflitos reais          0         0",
+      "tempo total        \x1b[31m1213 ms\x1b[39m    \x1b[32m110 ms\x1b[39m",
+    ]);
+  });
+
+  it("with color: ties on the shown value, aceitos and conflitos stay plain (D8)", () => {
+    // Written by hand: 40.6 and 41.4 both show as "41 ms", so the times tie;
+    // aceitos and conflitos reais differ but are never colored; rejeições
+    // and tentativas are equal. Only the header is bold.
+    const git: RunSummary = {
+      accepted: 1,
+      rejections: 1,
+      attempts: 2,
+      reparents: null,
+      conflicts: 1,
+      totalMs: 40.6,
+    };
+    const sprout: RunSummary = {
+      accepted: 2,
+      rejections: 1,
+      attempts: 2,
+      reparents: 0,
+      conflicts: 0,
+      totalMs: 41.4,
+    };
+
+    expect(formatTable(git, sprout, true)).toEqual([
+      "                     \x1b[1mgit\x1b[22m    \x1b[1msprout\x1b[22m",
+      "aceitos                1         2",
+      "rejeições              1         1",
+      "tentativas             2         2",
+      "trocas de pai          -         0",
+      "conflitos reais        1         0",
+      "tempo total        41 ms     41 ms",
+    ]);
+  });
+
+  it.each([
+    ["B", gitB, sproutB],
+    ["C", gitC, sproutC],
+  ] as const)(
+    "scenario %s: with color, the text without codes is the plain table",
+    (_id, git, sprout) => {
+      expect(formatTable(git, sprout, true).map(stripAnsi)).toEqual(
+        formatTable(git, sprout),
+      );
+    },
+  );
 });
 
 describe("formatTimestamp (D4, C5)", () => {
@@ -167,6 +312,35 @@ describe("formatScoreboard (D2, D4)", () => {
         "trocas de pai            -         9",
         "conflitos reais          0         0",
         "tempo total        1213 ms    110 ms",
+        "",
+        "resultados: git 12/11/2026 23:44, sprout 13/11/2026 23:31",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("scenario B with color: only the table is colored", () => {
+    const text = formatScoreboard({
+      scenario: SCENARIOS.B,
+      git: gitB,
+      sprout: sproutB,
+      gitTime: new Date(2026, 10, 12, 23, 44),
+      sproutTime: new Date(2026, 10, 13, 23, 31),
+      color: true,
+    });
+
+    // Written by hand: the title and the "resultados:" line carry no code.
+    expect(text).toBe(
+      [
+        "Cenário B: 10 agentes, arquivos diferentes",
+        "",
+        "                       \x1b[1mgit\x1b[22m    \x1b[1msprout\x1b[22m",
+        "aceitos                 10        10",
+        "rejeições               \x1b[31m45\x1b[39m         \x1b[32m0\x1b[39m",
+        "tentativas              \x1b[31m55\x1b[39m        \x1b[32m10\x1b[39m",
+        "trocas de pai            -         9",
+        "conflitos reais          0         0",
+        "tempo total        \x1b[31m1213 ms\x1b[39m    \x1b[32m110 ms\x1b[39m",
         "",
         "resultados: git 12/11/2026 23:44, sprout 13/11/2026 23:31",
         "",

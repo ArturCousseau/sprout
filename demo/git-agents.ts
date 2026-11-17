@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Barrier, createBarrier } from "./barrier.js";
+import { type Paint, painter } from "./color.js";
 import {
   checkGitAttempts,
   classifyPull,
@@ -15,7 +16,11 @@ import { HarnessError } from "./harness-error.js";
 import { type AgentResult, type RejectionType, summarize } from "./metrics.js";
 import { resultPath, type RunResult, writeResult } from "./results.js";
 import { fileFor, type Scenario } from "./scenarios.js";
-import { formatSummaryLine } from "./scoreboard.js";
+import {
+  formatRunTitle,
+  formatSeparator,
+  formatSummaryLine,
+} from "./scoreboard.js";
 
 /** What one git command produced. */
 export interface GitRun {
@@ -177,6 +182,8 @@ export interface RunGitScenarioOptions extends PrepareGitRunOptions {
    * ceiling (R5).
    */
   checkAttempts?: (totalAttempts: number, n: number) => void;
+  /** Colors on the lines (D2 of #20). Off by default, as in the tests. */
+  color?: boolean;
 }
 
 /**
@@ -191,6 +198,7 @@ export async function runGitScenario({
   resultsDir,
   log = console.log,
   checkAttempts = checkGitAttempts,
+  color = false,
 }: RunGitScenarioOptions): Promise<RunResult> {
   await prepareGitRun({ baseDir, resultsDir, scenario });
   const clones: string[] = [];
@@ -203,6 +211,10 @@ export async function runGitScenario({
   // waiting forever for an arrival that never comes.
   await commitAgents(scenario, clones);
 
+  // The title comes after the preparation and before the barrier exists, so
+  // it is never inside the measured time (P3 of #20).
+  log(formatRunTitle("git", scenario.id, "modo rápido", color));
+
   // The concurrent part starts here.
   const barrier = createBarrier(scenario.agents);
   // One counter for the whole run, shared by every agent (D6).
@@ -211,8 +223,9 @@ export async function runGitScenario({
     total += 1;
     checkAttempts(total, scenario.agents);
   };
+  const paint = painter(color);
   const runs = clones.map((clone, index) =>
-    runAgent({ agent: index + 1, clone, barrier, log, countPush }),
+    runAgent({ agent: index + 1, clone, barrier, log, paint, countPush }),
   );
 
   const settled = await Promise.allSettled(runs);
@@ -233,7 +246,8 @@ export async function runGitScenario({
   }
   const run: RunResult = { system: "git", scenario: scenario.id, agents };
   await writeResult(resultsDir, run);
-  log(formatSummaryLine("git", summarize(agents)));
+  log(formatSeparator("git", scenario.id, color));
+  log(formatSummaryLine("git", summarize(agents), color));
   return run;
 }
 
@@ -242,6 +256,8 @@ interface AgentContext {
   clone: string;
   barrier: Barrier;
   log: (line: string) => void;
+  /** The run's Paint: plain text when color is off. */
+  paint: Paint;
   /** Counts one more push for the run; throws above the ceiling. */
   countPush: () => void;
 }
@@ -252,6 +268,7 @@ async function runAgent({
   clone,
   barrier,
   log,
+  paint,
   countPush,
 }: AgentContext): Promise<AgentResult> {
   const release = await barrier.arrive();
@@ -282,21 +299,52 @@ async function runAgent({
     ]);
     const pushed = withStderr(push, () => classifyPush(push.stdout, push.code));
     if (pushed === "accepted") {
-      log(`[git] agente ${agent}: push → aceito`);
+      log(formatGitEvent(agent, { kind: "accepted" }, paint));
       return finish("accepted");
     }
     rejections[pushed] = (rejections[pushed] ?? 0) + 1;
-    log(`[git] agente ${agent}: push → rejeitado (${pushed})`);
+    log(formatGitEvent(agent, { kind: "rejected", type: pushed }, paint));
 
     const pull = await runGit(["-C", clone, "pull", "--rebase"]);
     const rebasing = existsSync(join(clone, ".git", "rebase-merge"));
     const pulled = withStderr(pull, () => classifyPull(pull.code, rebasing));
     if (pulled === "conflict") {
       await gitOk(["-C", clone, "rebase", "--abort"]);
-      log(`[git] agente ${agent}: pull --rebase → conflito, rebase --abort`);
+      log(formatGitEvent(agent, { kind: "conflict" }, paint));
       return finish("conflict");
     }
-    log(`[git] agente ${agent}: pull --rebase → ok`);
+    log(formatGitEvent(agent, { kind: "rebased" }, paint));
+  }
+}
+
+/** One fast-mode event of a git agent: a push or a pull --rebase result. */
+export type GitEvent =
+  | { kind: "accepted" }
+  | { kind: "rejected"; type: RejectionType }
+  | { kind: "rebased" }
+  | { kind: "conflict" };
+
+/**
+ * The event line of `agent` in the fast mode (docs/demo.md §3). With a
+ * coloring `paint`, the prefix, the arrow and the rejection type are dim and
+ * the result word takes its color, in pieces side by side (D1 of #20).
+ */
+export function formatGitEvent(
+  agent: number,
+  event: GitEvent,
+  paint: Paint = painter(false),
+): string {
+  const prefix = `${paint("dim", "[git]")} agente ${agent}:`;
+  const arrow = paint("dim", "→");
+  switch (event.kind) {
+    case "accepted":
+      return `${prefix} push ${arrow} ${paint("green", "✓ aceito")}`;
+    case "rejected":
+      return `${prefix} push ${arrow} ${paint("red", "✗ rejeitado")} ${paint("dim", `(${event.type})`)}`;
+    case "rebased":
+      return `${prefix} pull --rebase ${arrow} ok`;
+    case "conflict":
+      return `${prefix} pull --rebase ${arrow} ${paint("yellow", "✗ conflito")}, rebase --abort`;
   }
 }
 

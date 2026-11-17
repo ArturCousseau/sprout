@@ -17,6 +17,8 @@ export interface SproutCliOptions extends Omit<
 > {
   /** `process.stdin` in the demo; only read with `--passo` (#17, P5). */
   input: NodeJS.ReadableStream;
+  /** Colors on, decided by the entry point with shouldColor (D2 of #20). */
+  color: boolean;
 }
 
 /**

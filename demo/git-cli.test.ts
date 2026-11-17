@@ -55,6 +55,7 @@ describe("criterion 1: demo:git exit codes", () => {
       const running = runGitCli(["--cenario", "A"], io, {
         baseDir: base,
         resultsDir: results,
+        color: false,
         log: () => {},
         input: new PassThrough(),
       });
@@ -76,6 +77,7 @@ describe("criterion 1: demo:git exit codes", () => {
     const running = runGitCli(argv, io, {
       baseDir: base,
       resultsDir: results,
+      color: false,
       log: () => {},
       input: new PassThrough(),
     });
@@ -96,6 +98,7 @@ describe("criterion 1: demo:git exit codes", () => {
       const running = runGitCli(["--cenario", "A"], io, {
         baseDir: base,
         resultsDir: results,
+        color: false,
         log: () => {},
         input: new PassThrough(),
         checkAttempts: () => {
@@ -130,6 +133,7 @@ describe("demo:git --passo (#17)", () => {
         runGitCli(["--cenario", "A"], fast.io, {
           baseDir: base,
           resultsDir: results,
+          color: false,
           log: () => {},
           input: new PassThrough(),
         }),
@@ -141,6 +145,7 @@ describe("demo:git --passo (#17)", () => {
       const running = runGitCli(["--cenario", "A", "--passo"], io, {
         baseDir: base,
         resultsDir: results,
+        color: false,
         log: () => {},
         input: typed("\n".repeat(4)),
       });
@@ -163,7 +168,7 @@ describe("demo:git --passo (#17)", () => {
             },
           },
         },
-        { resultsDir: results },
+        { resultsDir: results, color: false },
       );
       await expect(scoreboard).rejects.toThrow(ExitCalled);
       expect(board.codes).toEqual([1]);
@@ -181,6 +186,7 @@ describe("demo:git --passo (#17)", () => {
       const running = runGitCli(["--cenario", "C", "--passo"], io, {
         baseDir: base,
         resultsDir: results,
+        color: false,
         log: () => {},
         input: typed("\n".repeat(4)),
       });
@@ -198,6 +204,7 @@ describe("demo:git --passo (#17)", () => {
     const running = runGitCli(["--cenario", "B", "--passo"], io, {
       baseDir: base,
       resultsDir: results,
+      color: false,
       log: () => {},
       input: new PassThrough(),
     });
@@ -218,6 +225,7 @@ describe("demo:git --passo (#17)", () => {
       const running = runGitCli(["--cenario", "A", "--passo"], io, {
         baseDir: base,
         resultsDir: results,
+        color: false,
         log: () => {},
         input,
       });
@@ -227,6 +235,41 @@ describe("demo:git --passo (#17)", () => {
       expect(written).toEqual([
         "demo:git: stdin closed during a pause (Enter expected)\n",
       ]);
+    },
+    GIT_TIMEOUT,
+  );
+});
+
+describe("demo:git with color (#20, D2)", () => {
+  // Written by hand: the colored titles of section 2 of the plan of #20.
+  it.each([
+    [
+      "A --passo",
+      ["--cenario", "A", "--passo"],
+      "\x1b[2m━━\x1b[22m \x1b[1mgit · cenário A · passo a passo\x1b[22m \x1b[2m━━\x1b[22m",
+    ],
+    [
+      "A fast",
+      ["--cenario", "A"],
+      "\x1b[2m━━\x1b[22m \x1b[1mgit · cenário A · modo rápido\x1b[22m \x1b[2m━━\x1b[22m",
+    ],
+  ])(
+    "%s: color reaches the run, the first line is the colored title",
+    async (_label, argv, title) => {
+      const { io, codes } = fakeIo();
+      const lines: string[] = [];
+
+      const running = runGitCli(argv, io, {
+        baseDir: base,
+        resultsDir: results,
+        log: (line) => lines.push(line),
+        input: typed("\n".repeat(4)),
+        color: true,
+      });
+
+      await expect(running).rejects.toThrow(ExitCalled);
+      expect(codes).toEqual([0]);
+      expect(lines[0]).toBe(title);
     },
     GIT_TIMEOUT,
   );

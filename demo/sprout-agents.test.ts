@@ -3,13 +3,16 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { painter, stripAnsi } from "./color.js";
 import { HarnessError } from "./harness-error.js";
 import { readResult } from "./results.js";
 import { SCENARIOS, type Scenario } from "./scenarios.js";
 import {
+  formatSproutEvent,
   type RunSproutScenarioOptions,
   runSproutScenario,
   type SproutFetch,
+  type SproutOutcome,
 } from "./sprout-agents.js";
 import {
   type SproutServer,
@@ -470,6 +473,149 @@ describe("summary line (#18, R11)", () => {
         /^\[sprout\] resumo: aceitos 2, rejeições 0, tentativas 2, trocas de pai 1, conflitos reais 0, tempo total \d+ ms$/,
       );
       expect(events.filter((line) => line.includes("resumo"))).toHaveLength(1);
+    },
+    SPROUT_TIMEOUT,
+  );
+});
+
+describe("formatSproutEvent (#20, D4)", () => {
+  // Written by hand: the lines of section 1 of the plan of #20, agent 10 as
+  // the worst case of digits.
+  it.each<[number, number, SproutOutcome, string]>([
+    [
+      1,
+      1,
+      { kind: "accepted", newParent: 1 },
+      "[sprout] agente 1: changeset (pai 1) → ✓ aceito",
+    ],
+    [
+      10,
+      1,
+      { kind: "accepted", newParent: 10 },
+      "[sprout] agente 10: changeset (pai 1) → ✓ aceito, pai trocado para 10",
+    ],
+    [
+      2,
+      1,
+      { kind: "conflict", conflicts: ["conflito.txt"] },
+      "[sprout] agente 2: changeset (pai 1) → ✗ conflito (conflito.txt)",
+    ],
+  ])("agent %d, parent %d, %o", (agent, parent, outcome, line) => {
+    expect(formatSproutEvent(agent, parent, outcome)).toBe(line);
+  });
+
+  // Written by hand: the colored lines of section 2 of the plan of #20.
+  it.each<[number, number, SproutOutcome, string]>([
+    [
+      1,
+      1,
+      { kind: "accepted", newParent: 1 },
+      "\x1b[2m[sprout]\x1b[22m agente 1: changeset \x1b[2m(pai 1)\x1b[22m \x1b[2m→\x1b[22m \x1b[32m✓ aceito\x1b[39m",
+    ],
+    [
+      10,
+      1,
+      { kind: "accepted", newParent: 10 },
+      "\x1b[2m[sprout]\x1b[22m agente 10: changeset \x1b[2m(pai 1)\x1b[22m \x1b[2m→\x1b[22m \x1b[32m✓ aceito\x1b[39m, \x1b[34mpai trocado\x1b[39m para 10",
+    ],
+    [
+      2,
+      1,
+      { kind: "conflict", conflicts: ["conflito.txt"] },
+      "\x1b[2m[sprout]\x1b[22m agente 2: changeset \x1b[2m(pai 1)\x1b[22m \x1b[2m→\x1b[22m \x1b[33m✗ conflito\x1b[39m (conflito.txt)",
+    ],
+  ])("with color: agent %d, parent %d, %o", (agent, parent, outcome, line) => {
+    expect(formatSproutEvent(agent, parent, outcome, painter(true))).toBe(line);
+  });
+});
+
+// Written by hand: the fast-mode title of scenario A and its separator, 38 ━
+// (section 1 of the plan of #20).
+const TITLE_A = "━━ sprout · cenário A · modo rápido ━━";
+const SEPARATOR_A = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+
+describe("fast-mode title and separator (#20, D4, P3)", () => {
+  it(
+    "scenario A: title first, separator before the summary, known lines between",
+    async () => {
+      const events: string[] = [];
+      const log = (line: string): void => {
+        events.push(line);
+      };
+
+      await runSproutScenario(options(SCENARIOS.A, { log }));
+
+      // Written by hand: every line an agent of scenario A can print. The
+      // winner gets changeset 2 and the other agent is moved onto it; which
+      // one wins depends on the race, so only membership is checked.
+      const possible = [
+        "[sprout] agente 1: changeset (pai 1) → ✓ aceito",
+        "[sprout] agente 1: changeset (pai 1) → ✓ aceito, pai trocado para 2",
+        "[sprout] agente 2: changeset (pai 1) → ✓ aceito",
+        "[sprout] agente 2: changeset (pai 1) → ✓ aceito, pai trocado para 2",
+      ];
+      expect(events[0]).toBe(TITLE_A);
+      expect(events.at(-2)).toBe(SEPARATOR_A);
+      const middle = events.slice(1, -2);
+      expect(middle.filter((line) => !possible.includes(line))).toEqual([]);
+      // Written by hand: the counts of scenario A are fixed (R11 of #18: 2
+      // accepted, 1 reparent); only the order varies. Title, 2 events,
+      // separator and summary: 5 lines, and exactly one parent change.
+      expect(events).toHaveLength(5);
+      expect(
+        middle.filter((line) => line.endsWith(", pai trocado para 2")).length,
+      ).toBe(1);
+    },
+    SPROUT_TIMEOUT,
+  );
+
+  it(
+    "scenario A with color: colored title and separator, known lines between",
+    async () => {
+      const events: string[] = [];
+      const log = (line: string): void => {
+        events.push(line);
+      };
+
+      await runSproutScenario(options(SCENARIOS.A, { log, color: true }));
+
+      // Written by hand, as in the test without color.
+      const possible = [
+        "[sprout] agente 1: changeset (pai 1) → ✓ aceito",
+        "[sprout] agente 1: changeset (pai 1) → ✓ aceito, pai trocado para 2",
+        "[sprout] agente 2: changeset (pai 1) → ✓ aceito",
+        "[sprout] agente 2: changeset (pai 1) → ✓ aceito, pai trocado para 2",
+      ];
+      expect(events[0]).toBe(
+        "\x1b[2m━━\x1b[22m \x1b[1msprout · cenário A · modo rápido\x1b[22m \x1b[2m━━\x1b[22m",
+      );
+      expect(events.at(-2)).toBe(`\x1b[2m${SEPARATOR_A}\x1b[22m`);
+      expect(events).toHaveLength(5);
+      expect(
+        events
+          .slice(1, -2)
+          .map(stripAnsi)
+          .filter((line) => !possible.includes(line)),
+      ).toEqual([]);
+    },
+    SPROUT_TIMEOUT,
+  );
+
+  it(
+    "failure after the preparation: title printed, no separator",
+    async () => {
+      const events: string[] = [];
+      const log = (line: string): void => {
+        events.push(line);
+      };
+
+      const running = runSproutScenario(
+        options(SCENARIOS.A, { fetch: answering("POST", 500, "{}"), log }),
+      );
+
+      await expect(running).rejects.toThrow(HarnessError);
+      expect(events).toContain(TITLE_A);
+      expect(events).not.toContain(SEPARATOR_A);
     },
     SPROUT_TIMEOUT,
   );

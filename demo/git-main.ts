@@ -5,6 +5,7 @@
  * without a result file.
  */
 import { join, resolve } from "node:path";
+import { shouldColor } from "./color.js";
 import { runGitCli } from "./git-cli.js";
 import { DEFAULT_RESULTS_DIR } from "./results.js";
 
@@ -14,4 +15,5 @@ await runGitCli(process.argv.slice(2), process, {
   baseDir: join(repoRoot, "demo/tmp"),
   resultsDir: join(repoRoot, DEFAULT_RESULTS_DIR),
   input: process.stdin,
+  color: shouldColor(process.stdout.isTTY, process.env),
 });

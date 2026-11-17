@@ -197,6 +197,7 @@ describe("demo:placar, exit 0 (C1, C2, C4, C5)", () => {
 
     const running = runScoreboardCli(["--cenario", "B"], io, {
       resultsDir: results,
+      color: false,
     });
 
     await expect(running).rejects.toThrow(ExitCalled);
@@ -232,6 +233,7 @@ describe("demo:placar, exit 0 (C1, C2, C4, C5)", () => {
 
       const running = runScoreboardCli(["--cenario", id], io, {
         resultsDir: results,
+        color: false,
       });
 
       await expect(running).rejects.toThrow(ExitCalled);
@@ -242,6 +244,25 @@ describe("demo:placar, exit 0 (C1, C2, C4, C5)", () => {
   );
 });
 
+describe("demo:placar with color (#20, D2, D8)", () => {
+  it("scenario B: color reaches the scoreboard, bold header", async () => {
+    await plant(gitB, sproutB);
+    const { io, out, codes } = fakeIo();
+
+    const running = runScoreboardCli(["--cenario", "B"], io, {
+      resultsDir: results,
+      color: true,
+    });
+
+    await expect(running).rejects.toThrow(ExitCalled);
+    expect(codes).toEqual([0]);
+    // Written by hand: the header of section 2 of the plan of #20.
+    expect(out.join("").split("\n")[2]).toBe(
+      "                       \x1b[1mgit\x1b[22m    \x1b[1msprout\x1b[22m",
+    );
+  });
+});
+
 describe("demo:placar, exit 2 (C7)", () => {
   it.each([
     ["missing", [], "--cenario is required (A, B or C)\n"],
@@ -249,7 +270,10 @@ describe("demo:placar, exit 2 (C7)", () => {
   ])("%s → stderr and exit 2, stdout empty", async (_label, argv, message) => {
     const { io, out, err, codes } = fakeIo();
 
-    const running = runScoreboardCli(argv, io, { resultsDir: results });
+    const running = runScoreboardCli(argv, io, {
+      resultsDir: results,
+      color: false,
+    });
 
     await expect(running).rejects.toThrow(ExitCalled);
     expect(codes).toEqual([2]);
@@ -262,6 +286,7 @@ describe("demo:placar, exit 2 (C7)", () => {
 
     const running = runScoreboardCli(["--cenario", "A", "--passo"], io, {
       resultsDir: results,
+      color: false,
     });
 
     await expect(running).rejects.toThrow(ExitCalled);
@@ -279,6 +304,7 @@ describe("demo:placar, exit 1 (C6, R7)", () => {
 
     const running = runScoreboardCli(["--cenario", "B"], io, {
       resultsDir: results,
+      color: false,
     });
 
     await expect(running).rejects.toThrow(ExitCalled);
@@ -378,6 +404,7 @@ describe("demo:placar, other errors (C8, R3)", () => {
 
     const running = runScoreboardCli(["--cenario", "B"], io, {
       resultsDir: results,
+      color: false,
     });
 
     await expect(running).rejects.toThrow("stdout broke");

@@ -11,6 +11,8 @@ import { type ExitIo, parseRunArgsOrExit } from "./scenarios.js";
 export interface GitCliOptions extends Omit<RunGitScenarioOptions, "scenario"> {
   /** `process.stdin` in the demo; only read with `--passo` (#17, P5). */
   input: NodeJS.ReadableStream;
+  /** Colors on, decided by the entry point with shouldColor (D2 of #20). */
+  color: boolean;
 }
 
 /**
@@ -37,6 +39,7 @@ export async function runGitCli(
           resultsDir: options.resultsDir,
           log: options.log,
           pause: () => lines.pause(),
+          color: options.color,
         });
       } finally {
         lines.close();

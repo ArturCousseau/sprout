@@ -1,11 +1,16 @@
 import { rm } from "node:fs/promises";
 import { hashContent } from "../src/core/hash.js";
 import { type Barrier, createBarrier } from "./barrier.js";
+import { type Paint, painter } from "./color.js";
 import { HarnessError } from "./harness-error.js";
 import { type AgentResult, summarize } from "./metrics.js";
 import { resultPath, type RunResult, writeResult } from "./results.js";
 import { fileFor, type Scenario } from "./scenarios.js";
-import { formatSummaryLine } from "./scoreboard.js";
+import {
+  formatRunTitle,
+  formatSeparator,
+  formatSummaryLine,
+} from "./scoreboard.js";
 import {
   checkStatus,
   parseAccepted,
@@ -33,6 +38,8 @@ export interface RunSproutScenarioOptions {
   fetch?: SproutFetch;
   /** Starts the server. Tests keep the SproutServer to check it exited. */
   startServer?: (options: StartSproutServerOptions) => Promise<SproutServer>;
+  /** Colors on the lines (D2 of #20). Off by default, as in the tests. */
+  color?: boolean;
 }
 
 /**
@@ -49,6 +56,7 @@ export async function runSproutScenario({
   log = console.log,
   fetch: send = globalThis.fetch,
   startServer = startSproutServer,
+  color = false,
 }: RunSproutScenarioOptions): Promise<RunResult> {
   for (const path of [dataDir, resultPath(resultsDir, "sprout", scenario.id)]) {
     await rm(path, { recursive: true, force: true });
@@ -59,7 +67,7 @@ export async function runSproutScenario({
   // the result is written, so a server that fails to stop leaves no JSON.
   let agents: AgentResult[];
   try {
-    agents = await runAgents(scenario, server.url, send, log);
+    agents = await runAgents(scenario, server.url, send, log, color);
   } catch (error) {
     // P1: the first error wins. stop() only rejects after the child closed
     // (SIGKILL), so ignoring its error here never leaves a process behind.
@@ -70,7 +78,8 @@ export async function runSproutScenario({
 
   const run: RunResult = { system: "sprout", scenario: scenario.id, agents };
   await writeResult(resultsDir, run);
-  log(formatSummaryLine("sprout", summarize(agents)));
+  log(formatSeparator("sprout", scenario.id, color));
+  log(formatSummaryLine("sprout", summarize(agents), color));
   return run;
 }
 
@@ -84,16 +93,22 @@ async function runAgents(
   url: string,
   send: SproutFetch,
   log: (line: string) => void,
+  color: boolean,
 ): Promise<AgentResult[]> {
   // Every agent's GET, hash and PUT, one after the other, before the barrier
   // exists (D5): a request that fails here throws before any agent waits, so
   // no agent is left waiting forever for an arrival that never comes.
   const prepared = await prepareAgents(scenario, url, send);
 
+  // The title comes after the preparation and before the barrier exists, so
+  // it is never inside the measured time (P3 of #20).
+  log(formatRunTitle("sprout", scenario.id, "modo rápido", color));
+
   // The concurrent part starts here.
   const barrier = createBarrier(scenario.agents);
+  const paint = painter(color);
   const runs = prepared.map((agent) =>
-    runAgent({ ...agent, url, send, barrier, log }),
+    runAgent({ ...agent, url, send, barrier, log, paint }),
   );
 
   const settled = await Promise.allSettled(runs);
@@ -173,6 +188,8 @@ interface AgentContext extends Prepared {
   send: SproutFetch;
   barrier: Barrier;
   log: (line: string) => void;
+  /** The run's Paint: plain text when color is off. */
+  paint: Paint;
 }
 
 /** One agent, already prepared: barrier, then one POST, no retry (D6). */
@@ -184,6 +201,7 @@ async function runAgent({
   send,
   barrier,
   log,
+  paint,
 }: AgentContext): Promise<AgentResult> {
   const release = await barrier.arrive();
   // No await may come between the barrier release above and this call: all
@@ -206,8 +224,7 @@ async function runAgent({
     const endMs = performance.now() - release; // after the body is read (R12)
     const reparented = newParent !== parent;
     log(
-      `[sprout] agente ${agent}: changeset (pai ${parent}) → aceito` +
-        (reparented ? `, pai trocado para ${newParent}` : ""),
+      formatSproutEvent(agent, parent, { kind: "accepted", newParent }, paint),
     );
     return { ...result, outcome: "accepted", reparented, endMs };
   }
@@ -215,10 +232,38 @@ async function runAgent({
     await readJson(response, "postChangesets 409"),
   );
   const endMs = performance.now() - release;
-  log(
-    `[sprout] agente ${agent}: changeset (pai ${parent}) → conflito (${conflicts.join(", ")})`,
-  );
+  log(formatSproutEvent(agent, parent, { kind: "conflict", conflicts }, paint));
   return { ...result, outcome: "conflict", reparented: false, endMs };
+}
+
+/** The server's answer to one agent's POST in the fast mode. */
+export type SproutOutcome =
+  | { kind: "accepted"; newParent: number }
+  | { kind: "conflict"; conflicts: string[] };
+
+/**
+ * The event line of `agent`, which sent `parent`, in the fast mode
+ * (docs/demo.md §4). An accepted changeset whose parent changed says so.
+ * With a coloring `paint`, the prefix, `(pai N)` and the arrow are dim and
+ * the result words take their colors, in pieces side by side (D1 of #20).
+ */
+export function formatSproutEvent(
+  agent: number,
+  parent: number,
+  outcome: SproutOutcome,
+  paint: Paint = painter(false),
+): string {
+  const prefix = `${paint("dim", "[sprout]")} agente ${agent}: changeset ${paint("dim", `(pai ${parent})`)} ${paint("dim", "→")}`;
+  if (outcome.kind === "conflict") {
+    return `${prefix} ${paint("yellow", "✗ conflito")} (${outcome.conflicts.join(", ")})`;
+  }
+  const reparented = outcome.newParent !== parent;
+  return (
+    `${prefix} ${paint("green", "✓ aceito")}` +
+    (reparented
+      ? `, ${paint("blue", "pai trocado")} para ${outcome.newParent}`
+      : "")
+  );
 }
 
 /**

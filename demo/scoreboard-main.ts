@@ -4,6 +4,7 @@
  * side by side. Runs nothing and writes nothing (D1).
  */
 import { join, resolve } from "node:path";
+import { shouldColor } from "./color.js";
 import { DEFAULT_RESULTS_DIR } from "./results.js";
 import { runScoreboardCli } from "./scoreboard-cli.js";
 
@@ -11,4 +12,5 @@ const repoRoot = resolve(import.meta.dirname, "..");
 
 await runScoreboardCli(process.argv.slice(2), process, {
   resultsDir: join(repoRoot, DEFAULT_RESULTS_DIR),
+  color: shouldColor(process.stdout.isTTY, process.env),
 });
