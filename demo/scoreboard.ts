@@ -1,6 +1,7 @@
+import { painter, visibleWidth } from "./color.js";
 import type { RunSummary } from "./metrics.js";
 import type { System } from "./results.js";
-import type { Scenario } from "./scenarios.js";
+import type { Scenario, ScenarioId } from "./scenarios.js";
 
 /** Row labels of the scoreboard, in the order of docs/demo.md §6 (D2). */
 export const LABELS = [
@@ -35,6 +36,47 @@ export function formatSummaryLine(system: System, summary: RunSummary): string {
   const cells = formatColumn(summary);
   const pairs = LABELS.map((label, index) => `${label} ${cells[index]}`);
   return `[${system}] resumo: ${pairs.join(", ")}`;
+}
+
+/** The two modes a run's title names (#20, D4). */
+export type RunMode = "passo a passo" | "modo rápido";
+
+/** The title's text between the two `━━`. */
+function titleText(
+  system: System,
+  scenario: ScenarioId,
+  mode: RunMode,
+): string {
+  return `${system} · cenário ${scenario} · ${mode}`;
+}
+
+/**
+ * The first line of each run, printed after the preparation (D4, R13):
+ * `━━ git · cenário A · passo a passo ━━`. With color, the `━━` are dim and
+ * the text bold, three pieces side by side, never one inside another.
+ */
+export function formatRunTitle(
+  system: System,
+  scenario: ScenarioId,
+  mode: RunMode,
+  color = false,
+): string {
+  const paint = painter(color);
+  const bar = paint("dim", "━━");
+  return `${bar} ${paint("bold", titleText(system, scenario, mode))} ${bar}`;
+}
+
+/**
+ * The line before the fast mode's summary (D4): `━` as wide as that run's
+ * title, measured on the plain title. Dim with color.
+ */
+export function formatSeparator(
+  system: System,
+  scenario: ScenarioId,
+  color = false,
+): string {
+  const width = visibleWidth(formatRunTitle(system, scenario, "modo rápido"));
+  return painter(color)("dim", "━".repeat(width));
 }
 
 /** `Cenário B: 10 agentes, arquivos diferentes`, from SCENARIOS (D2). */

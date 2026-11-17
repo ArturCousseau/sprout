@@ -3,7 +3,9 @@ import type { RunSummary } from "./metrics.js";
 import { SCENARIOS } from "./scenarios.js";
 import {
   formatColumn,
+  formatRunTitle,
   formatScoreboard,
+  formatSeparator,
   formatSummaryLine,
   formatTable,
   formatTimestamp,
@@ -98,6 +100,50 @@ describe("scenarioTitle (D2, C2)", () => {
     ["C", "Cenário C: 2 agentes, mesmo arquivo"],
   ] as const)("scenario %s", (id, title) => {
     expect(scenarioTitle(SCENARIOS[id])).toBe(title);
+  });
+});
+
+describe("formatRunTitle (#20, D4)", () => {
+  // Written by hand: the titles of section 1 of the plan of #20.
+  it.each([
+    ["git", "A", "passo a passo", "━━ git · cenário A · passo a passo ━━"],
+    [
+      "sprout",
+      "C",
+      "passo a passo",
+      "━━ sprout · cenário C · passo a passo ━━",
+    ],
+    ["git", "B", "modo rápido", "━━ git · cenário B · modo rápido ━━"],
+    ["sprout", "B", "modo rápido", "━━ sprout · cenário B · modo rápido ━━"],
+  ] as const)("%s %s %s, no color", (system, scenario, mode, title) => {
+    expect(formatRunTitle(system, scenario, mode)).toBe(title);
+  });
+
+  it("with color: dim ━━ and bold text, side by side, never nested", () => {
+    expect(formatRunTitle("git", "A", "passo a passo", true)).toBe(
+      "\x1b[2m━━\x1b[22m \x1b[1mgit · cenário A · passo a passo\x1b[22m \x1b[2m━━\x1b[22m",
+    );
+  });
+});
+
+describe("formatSeparator (#20, D4)", () => {
+  // Written by hand: as wide as the fast-mode title of the same system.
+  it("git: 35 ━, the width of its title", () => {
+    expect(formatSeparator("git", "B")).toBe(
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    );
+  });
+
+  it("sprout: 38 ━, the width of its title", () => {
+    expect(formatSeparator("sprout", "B")).toBe(
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    );
+  });
+
+  it("with color: the whole separator dim", () => {
+    expect(formatSeparator("git", "B", true)).toBe(
+      "\x1b[2m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[22m",
+    );
   });
 });
 
