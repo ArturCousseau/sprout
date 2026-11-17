@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { visibleWidth } from "./color.js";
+import { stripAnsi, visibleWidth } from "./color.js";
 import type { RunSummary } from "./metrics.js";
 import { SCENARIOS } from "./scenarios.js";
 import {
@@ -214,6 +214,64 @@ describe("formatTable (D2, R9)", () => {
       "tempo total        41 ms      5 ms",
     ]);
   });
+
+  it("scenario B with color: bold header, lower value green, higher red (D8)", () => {
+    // Written by hand: section 2 of the plan of #20, with the times of gitB
+    // and sproutB. The padStart spaces stay outside the codes (R9).
+    expect(formatTable(gitB, sproutB, true)).toEqual([
+      "                       \x1b[1mgit\x1b[22m    \x1b[1msprout\x1b[22m",
+      "aceitos                 10        10",
+      "rejeições               \x1b[31m45\x1b[39m         \x1b[32m0\x1b[39m",
+      "tentativas              \x1b[31m55\x1b[39m        \x1b[32m10\x1b[39m",
+      "trocas de pai            -         9",
+      "conflitos reais          0         0",
+      "tempo total        \x1b[31m1213 ms\x1b[39m    \x1b[32m110 ms\x1b[39m",
+    ]);
+  });
+
+  it("with color: ties on the shown value, aceitos and conflitos stay plain (D8)", () => {
+    // Written by hand: 40.6 and 41.4 both show as "41 ms", so the times tie;
+    // aceitos and conflitos reais differ but are never colored; rejeições
+    // and tentativas are equal. Only the header is bold.
+    const git: RunSummary = {
+      accepted: 1,
+      rejections: 1,
+      attempts: 2,
+      reparents: null,
+      conflicts: 1,
+      totalMs: 40.6,
+    };
+    const sprout: RunSummary = {
+      accepted: 2,
+      rejections: 1,
+      attempts: 2,
+      reparents: 0,
+      conflicts: 0,
+      totalMs: 41.4,
+    };
+
+    expect(formatTable(git, sprout, true)).toEqual([
+      "                     \x1b[1mgit\x1b[22m    \x1b[1msprout\x1b[22m",
+      "aceitos                1         2",
+      "rejeições              1         1",
+      "tentativas             2         2",
+      "trocas de pai          -         0",
+      "conflitos reais        1         0",
+      "tempo total        41 ms     41 ms",
+    ]);
+  });
+
+  it.each([
+    ["B", gitB, sproutB],
+    ["C", gitC, sproutC],
+  ] as const)(
+    "scenario %s: with color, the text without codes is the plain table",
+    (_id, git, sprout) => {
+      expect(formatTable(git, sprout, true).map(stripAnsi)).toEqual(
+        formatTable(git, sprout),
+      );
+    },
+  );
 });
 
 describe("formatTimestamp (D4, C5)", () => {
@@ -254,6 +312,35 @@ describe("formatScoreboard (D2, D4)", () => {
         "trocas de pai            -         9",
         "conflitos reais          0         0",
         "tempo total        1213 ms    110 ms",
+        "",
+        "resultados: git 12/11/2026 23:44, sprout 13/11/2026 23:31",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("scenario B with color: only the table is colored", () => {
+    const text = formatScoreboard({
+      scenario: SCENARIOS.B,
+      git: gitB,
+      sprout: sproutB,
+      gitTime: new Date(2026, 10, 12, 23, 44),
+      sproutTime: new Date(2026, 10, 13, 23, 31),
+      color: true,
+    });
+
+    // Written by hand: the title and the "resultados:" line carry no code.
+    expect(text).toBe(
+      [
+        "Cenário B: 10 agentes, arquivos diferentes",
+        "",
+        "                       \x1b[1mgit\x1b[22m    \x1b[1msprout\x1b[22m",
+        "aceitos                 10        10",
+        "rejeições               \x1b[31m45\x1b[39m         \x1b[32m0\x1b[39m",
+        "tentativas              \x1b[31m55\x1b[39m        \x1b[32m10\x1b[39m",
+        "trocas de pai            -         9",
+        "conflitos reais          0         0",
+        "tempo total        \x1b[31m1213 ms\x1b[39m    \x1b[32m110 ms\x1b[39m",
         "",
         "resultados: git 12/11/2026 23:44, sprout 13/11/2026 23:31",
         "",
