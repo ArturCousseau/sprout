@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { hashContent } from "../src/core/hash.js";
+import { visibleWidth } from "./color.js";
 import { HarnessError } from "./harness-error.js";
-import { checkMain, expectedMain, type MainState } from "./main-check.js";
+import {
+  checkMain,
+  expectedMain,
+  formatMainLine,
+  type MainState,
+} from "./main-check.js";
 import type { AgentResult } from "./metrics.js";
 import { SCENARIOS } from "./scenarios.js";
 
@@ -280,6 +286,76 @@ describe("checkMain (D4, D8)", () => {
       exactly(
         "main check: missing agente-1.txt, agente-2.txt; extra intruso.txt; content differs: README.md; commits: expected 3, got 2",
       ),
+    );
+  });
+});
+
+// Written by hand, byte by byte, from the text approved in the plan (A5):
+// [system, accepted, line]. A, B and C in both systems; C is the singular.
+const LINES = [
+  [
+    "git",
+    2,
+    "[git] main conferida → ✓ 2 commits aceitos na main (arquivos, conteúdo e contagem)",
+  ],
+  [
+    "git",
+    10,
+    "[git] main conferida → ✓ 10 commits aceitos na main (arquivos, conteúdo e contagem)",
+  ],
+  [
+    "git",
+    1,
+    "[git] main conferida → ✓ 1 commit aceito na main (arquivos, conteúdo e contagem)",
+  ],
+  [
+    "sprout",
+    2,
+    "[sprout] main conferida → ✓ 2 commits aceitos na main (arquivos, conteúdo e contagem)",
+  ],
+  [
+    "sprout",
+    10,
+    "[sprout] main conferida → ✓ 10 commits aceitos na main (arquivos, conteúdo e contagem)",
+  ],
+  [
+    "sprout",
+    1,
+    "[sprout] main conferida → ✓ 1 commit aceito na main (arquivos, conteúdo e contagem)",
+  ],
+] as const;
+
+describe("formatMainLine (D5)", () => {
+  it.each(LINES)("ML1 %s, %i accepted: the exact line", (system, n, line) => {
+    expect(formatMainLine(system, n)).toBe(line);
+  });
+
+  // Written by hand (A6): prefix and arrow dim, the whole result green,
+  // "na main" and the parentheses without color.
+  it.each([
+    [
+      "git",
+      2,
+      "\x1b[2m[git]\x1b[22m main conferida \x1b[2m→\x1b[22m \x1b[32m✓ 2 commits aceitos\x1b[39m na main (arquivos, conteúdo e contagem)",
+    ],
+    [
+      "sprout",
+      1,
+      "\x1b[2m[sprout]\x1b[22m main conferida \x1b[2m→\x1b[22m \x1b[32m✓ 1 commit aceito\x1b[39m na main (arquivos, conteúdo e contagem)",
+    ],
+  ] as const)("ML2 %s, %i accepted, with color", (system, n, line) => {
+    expect(formatMainLine(system, n, true)).toBe(line);
+  });
+
+  // A guard: green on the skeleton too (an empty line is 0 columns), see the
+  // plan's "guardas sem prova por mutação" (A4).
+  it.each(
+    LINES.flatMap(([system, n]) =>
+      [false, true].map((color) => [system, n, color] as const),
+    ),
+  )("ML3 %s, %i accepted, color %s: fits 111 columns", (system, n, color) => {
+    expect(visibleWidth(formatMainLine(system, n, color))).toBeLessThanOrEqual(
+      111,
     );
   });
 });

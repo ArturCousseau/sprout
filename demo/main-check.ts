@@ -1,5 +1,7 @@
+import { painter } from "./color.js";
 import { HarnessError } from "./harness-error.js";
 import type { AgentResult } from "./metrics.js";
+import type { System } from "./results.js";
 import { fileFor, type Scenario } from "./scenarios.js";
 
 /**
@@ -85,4 +87,21 @@ export function checkMain(expected: MainState, actual: MainState): void {
   if (problems.length > 0) {
     throw new HarnessError(`main check: ${problems.join("; ")}`);
   }
+}
+
+/**
+ * The line a fast run prints once its main passed the check, before the
+ * separator (D5): the accepted commits, singular for 1. With color, the
+ * prefix and the arrow are dim and the whole result green, like `✓ aceito`
+ * in the event lines; "na main" and the parentheses have no color (A6).
+ */
+export function formatMainLine(
+  system: System,
+  accepted: number,
+  color = false,
+): string {
+  const paint = painter(color);
+  const commits =
+    accepted === 1 ? "1 commit aceito" : `${accepted} commits aceitos`;
+  return `${paint("dim", `[${system}]`)} main conferida ${paint("dim", "→")} ${paint("green", `✓ ${commits}`)} na main (arquivos, conteúdo e contagem)`;
 }
