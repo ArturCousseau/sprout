@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 import { HarnessError } from "./harness-error.js";
 import { resultPath } from "./results.js";
 import { fileFor, type Scenario } from "./scenarios.js";
+import { formatRunTitle } from "./scoreboard.js";
 import {
   getMain,
   type Prepared,
@@ -38,11 +39,22 @@ export interface RunSproutStepsOptions {
 }
 
 // Column of the arrow: the longest action, "agente 2: envia changeset (pai =
-// 1)" (35), plus 4 spaces, as in docs/demo.md §5.
+// 1)" (35), plus 4 spaces, as in docs/demo.md §5. The step counter comes
+// before the padded action, so it does not change this width (P1 of #20).
 const ACTION_WIDTH = 39;
 
-function stepLine(action: string, result: string): string {
-  return `[sprout] ${action.padEnd(ACTION_WIDTH)}→ ${result}`;
+/** Steps of the Sprout script, the T of the `N/T` counter (D6 of #20). */
+const STEPS = 3;
+
+/**
+ * `[sprout] 3/3 ` plus the text: the prefix and the step counter (P1 of #20).
+ */
+function counted(step: number, text: string): string {
+  return `[sprout] ${step}/${STEPS} ${text}`;
+}
+
+function stepLine(step: number, action: string, result: string): string {
+  return counted(step, `${action.padEnd(ACTION_WIDTH)}→ ${result}`);
 }
 
 /**
@@ -77,10 +89,11 @@ function describeAnswer(answer: Answer, sentParent: number): string {
 /**
  * The step-by-step mode of scenarios A and C in Sprout (#17, docs/demo.md
  * §5): a fresh server and the same preparation as the fast mode (GET, hash,
- * PUT), then a header and, for each step, a pause, the real request, its
- * check against the script and one line with the head of main read from the
- * server. The order is scripted and the agents never send at the same time.
- * Never writes a result file; the old one is deleted first (D6).
+ * PUT), then the title and the Enter line and, for each step, a pause, the
+ * real request, its check against the script and one line with the head of
+ * main read from the server. The order is scripted and the agents never send
+ * at the same time. Never writes a result file; the old one is deleted first
+ * (D6).
  */
 export async function runSproutSteps({
   scenario,
@@ -108,7 +121,7 @@ export async function runSproutSteps({
   await server.stop(); // here a failure is the run's only error: thrown
 }
 
-/** The header and the three steps against the server at `url`. */
+/** The title, the Enter line and the three steps against the server at `url`. */
 async function runSteps(
   scenario: Scenario,
   url: string,
@@ -134,9 +147,10 @@ async function runSteps(
   const action = (agent: Prepared): string =>
     `agente ${agent.agent}: envia changeset`;
 
-  log(
-    `[sprout] cenário ${scenario.id}, passo a passo: Enter antes de cada etapa`,
-  );
+  // The title and the Enter line replace the one-line header of R9 of #17
+  // (D4, R12 of #20).
+  log(formatRunTitle("sprout", scenario.id, "passo a passo"));
+  log("[sprout] Enter antes de cada etapa");
 
   await pause();
   const start = await getMain(send, url);
@@ -144,7 +158,7 @@ async function runSteps(
   for (const agent of [first, second]) {
     expectStep(1, action1, `parent ${start}`, `parent ${agent.parent}`);
   }
-  log(`[sprout] ${action1} no changeset ${start}`);
+  log(counted(1, `${action1} no changeset ${start}`));
 
   await pause();
   const answer1 = await post(first);
@@ -155,7 +169,7 @@ async function runSteps(
     describeAnswer(answer1, first.parent),
   );
   const afterFirst = await getMain(send, url);
-  log(stepLine(sends(first), `aceito, main = ${afterFirst}`));
+  log(stepLine(2, sends(first), `✓ aceito, main = ${afterFirst}`));
 
   await pause();
   const answer2 = await post(second);
@@ -175,7 +189,9 @@ async function runSteps(
   }
   const result =
     answer2.status === 409
-      ? `CONFLITO (${answer2.conflicts.join(", ")} mudou depois do pai ${second.parent})`
-      : `aceito, pai trocado para ${answer2.parent} (outro arquivo)`;
-  log(stepLine(sends(second), `${result}, main = ${await getMain(send, url)}`));
+      ? `✗ CONFLITO (${answer2.conflicts.join(", ")} mudou depois do pai ${second.parent})`
+      : `✓ aceito, pai trocado para ${answer2.parent} (outro arquivo)`;
+  log(
+    stepLine(3, sends(second), `${result}, main = ${await getMain(send, url)}`),
+  );
 }
