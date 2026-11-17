@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { visibleWidth } from "./color.js";
 import { gitOk } from "./git-agents.js";
 import { expectFetchFirst, runGitSteps } from "./git-steps.js";
 import { identityGitConfig } from "./git.js";
@@ -12,8 +13,8 @@ import { SCENARIOS } from "./scenarios.js";
 /** Real git and several clones: slower than the default 5 s on a busy CI. */
 const GIT_TIMEOUT = 60_000;
 
-/** Teto de colunas de uma linha do passo a passo (P2 do plano da #17). */
-const MAX_COLUMNS = 105;
+/** Teto de colunas de uma linha, largura visível (D7 da #20; era 105 na #17). */
+const MAX_COLUMNS = 111;
 
 let base: string;
 let results: string;
@@ -59,7 +60,7 @@ function recorder() {
 
 describe("runGitSteps: lines (#17, D3, D5)", () => {
   it(
-    "scenario A: the five lines of §5, with the hashes of the central repo",
+    "scenario A: title, Enter line and the four steps, with the hashes of the central repo",
     async () => {
       const { events, log, pause } = recorder();
 
@@ -72,7 +73,7 @@ describe("runGitSteps: lines (#17, D3, D5)", () => {
       });
 
       // Checked before reading the central repo, which may not exist.
-      expect(events).toHaveLength(5);
+      expect(events).toHaveLength(6);
       // initial commit ← agent 1 ← agent 2 (rebased)
       expect(
         await git([
@@ -86,14 +87,18 @@ describe("runGitSteps: lines (#17, D3, D5)", () => {
       const initial = await central("main~2");
       const first = await central("main~1");
       const last = await central("main");
+      // Written by hand: section 1 of the plan of #20.
       expect(events).toEqual([
-        "[git] cenário A, passo a passo: Enter antes de cada etapa",
-        `[git] agente 1 e agente 2 partem da main no commit ${initial}`,
-        `[git] agente 1: push                    → aceito, main = ${first}`,
-        "[git] agente 2: push                    → REJEITADO (a main andou; o git não olha os arquivos)",
-        `[git] agente 2: pull --rebase + push    → aceito, main = ${last}`,
+        "━━ git · cenário A · passo a passo ━━",
+        "[git] Enter antes de cada etapa",
+        `[git] 1/4 agente 1 e agente 2 partem da main no commit ${initial}`,
+        `[git] 2/4 agente 1: push                    → ✓ aceito, main = ${first}`,
+        "[git] 3/4 agente 2: push                    → ✗ REJEITADO (a main andou; o git não olha os arquivos)",
+        `[git] 4/4 agente 2: pull --rebase + push    → ✓ aceito, main = ${last}`,
       ]);
-      expect(events.filter((line) => line.length > MAX_COLUMNS)).toEqual([]);
+      expect(events.filter((line) => visibleWidth(line) > MAX_COLUMNS)).toEqual(
+        [],
+      );
     },
     GIT_TIMEOUT,
   );
@@ -112,7 +117,7 @@ describe("runGitSteps: lines (#17, D3, D5)", () => {
       });
 
       // Checked before reading the central repo, which may not exist.
-      expect(events).toHaveLength(5);
+      expect(events).toHaveLength(6);
       // initial commit ← agent 1; agent 2 never got in
       expect(
         await git([
@@ -125,14 +130,18 @@ describe("runGitSteps: lines (#17, D3, D5)", () => {
       ).toBe("2");
       const initial = await central("main~1");
       const first = await central("main");
+      // Written by hand: section 1 of the plan of #20.
       expect(events).toEqual([
-        "[git] cenário C, passo a passo: Enter antes de cada etapa",
-        `[git] agente 1 e agente 2 partem da main no commit ${initial}`,
-        `[git] agente 1: push                    → aceito, main = ${first}`,
-        "[git] agente 2: push                    → REJEITADO (a main andou; o git não olha os arquivos)",
-        `[git] agente 2: pull --rebase           → CONFLITO em conflito.txt; rebase --abort, main = ${first}`,
+        "━━ git · cenário C · passo a passo ━━",
+        "[git] Enter antes de cada etapa",
+        `[git] 1/4 agente 1 e agente 2 partem da main no commit ${initial}`,
+        `[git] 2/4 agente 1: push                    → ✓ aceito, main = ${first}`,
+        "[git] 3/4 agente 2: push                    → ✗ REJEITADO (a main andou; o git não olha os arquivos)",
+        `[git] 4/4 agente 2: pull --rebase           → ✗ CONFLITO em conflito.txt; rebase --abort, main = ${first}`,
       ]);
-      expect(events.filter((line) => line.length > MAX_COLUMNS)).toEqual([]);
+      expect(events.filter((line) => visibleWidth(line) > MAX_COLUMNS)).toEqual(
+        [],
+      );
       const clone = join(base, "git-agente-2");
       expect(await git(["-C", clone, "status", "--porcelain"])).toBe("");
       expect(existsSync(join(clone, ".git", "rebase-merge"))).toBe(false);
@@ -155,8 +164,9 @@ describe("runGitSteps: pauses (#17, D4, R9)", () => {
         pause,
       });
 
-      // Lines already printed at each pause: the header, then one per step.
-      expect(pausedAt).toEqual([1, 2, 3, 4]);
+      // Lines already printed at each pause: the title and the Enter line
+      // (D4 of #20), then one per step.
+      expect(pausedAt).toEqual([2, 3, 4, 5]);
     },
     GIT_TIMEOUT,
   );
@@ -219,7 +229,7 @@ describe("runGitSteps: checked against the script (#17, D3, R8)", () => {
       await expect(running).rejects.toThrow(
         "step 2 (agente 1: push): expected accepted, got fetch-first",
       );
-      expect(events).toHaveLength(2); // header and step 1, nothing of step 2
+      expect(events).toHaveLength(3); // title, Enter line and step 1, nothing of step 2
       expect(calls).toBe(2);
     },
     GIT_TIMEOUT,
@@ -258,7 +268,7 @@ describe("runGitSteps: checked against the script (#17, D3, R8)", () => {
       await expect(running).rejects.toThrow(
         "step 4 (agente 2: pull --rebase + push): expected rebased, got conflict",
       );
-      expect(events).toHaveLength(4); // header and steps 1-3, nothing of step 4
+      expect(events).toHaveLength(5); // title, Enter line and steps 1-3, nothing of step 4
       expect(calls).toBe(4);
     },
     GIT_TIMEOUT,

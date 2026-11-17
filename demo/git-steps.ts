@@ -10,6 +10,7 @@ import {
 import { classifyPull, classifyPush, type PushResult } from "./git.js";
 import { HarnessError } from "./harness-error.js";
 import { fileFor } from "./scenarios.js";
+import { formatRunTitle } from "./scoreboard.js";
 
 export interface RunGitStepsOptions extends PrepareGitRunOptions {
   /** Where the step lines go. Tests record them. */
@@ -19,8 +20,12 @@ export interface RunGitStepsOptions extends PrepareGitRunOptions {
 }
 
 // Column of the arrow: the longest action, "agente 2: pull --rebase + push"
-// (30), plus 4 spaces, as in docs/demo.md §5.
+// (30), plus 4 spaces, as in docs/demo.md §5. The step counter comes before
+// the padded action, so it does not change this width (P1 of #20).
 const ACTION_WIDTH = 34;
+
+/** Steps of the git script, the T of the `N/T` counter (D6 of #20). */
+const STEPS = 4;
 
 /**
  * Stops the run when a step's real result is not the script's (D3, R8): the
@@ -48,16 +53,22 @@ export function expectFetchFirst(result: PushResult): void {
   expectStep(3, "agente 2: push", "fetch-first", result);
 }
 
-function stepLine(action: string, result: string): string {
-  return `[git] ${action.padEnd(ACTION_WIDTH)}→ ${result}`;
+/** `[git] 2/4 ` plus the text: the prefix and the step counter (P1 of #20). */
+function counted(step: number, text: string): string {
+  return `[git] ${step}/${STEPS} ${text}`;
+}
+
+function stepLine(step: number, action: string, result: string): string {
+  return counted(step, `${action.padEnd(ACTION_WIDTH)}→ ${result}`);
 }
 
 /**
  * The step-by-step mode of scenarios A and C in git (#17, docs/demo.md §5):
- * the same preparation and commits as the fast mode, then a header and, for
- * each step, a pause, the real git operation, its check against the script
- * and one line. The order is scripted and the agents never run at the same
- * time. Never writes a result file; the preparation deletes the old one (D6).
+ * the same preparation and commits as the fast mode, then the title and the
+ * Enter line and, for each step, a pause, the real git operation, its check
+ * against the script and one line. The order is scripted and the agents
+ * never run at the same time. Never writes a result file; the preparation
+ * deletes the old one (D6).
  */
 export async function runGitSteps({
   scenario,
@@ -89,25 +100,29 @@ export async function runGitSteps({
     return classifyPush(result.stdout, result.code);
   };
 
-  log(`[git] cenário ${scenario.id}, passo a passo: Enter antes de cada etapa`);
+  // The title and the Enter line replace the one-line header of R9 of #17
+  // (D4, R12 of #20).
+  log(formatRunTitle("git", scenario.id, "passo a passo"));
+  log("[git] Enter antes de cada etapa");
 
   await pause();
   const start = await rev(central, "main");
   const action1 = "agente 1 e agente 2 partem da main";
   expectStep(1, action1, start, await rev(first, "HEAD~1"));
   expectStep(1, action1, start, await rev(second, "HEAD~1"));
-  log(`[git] ${action1} no commit ${await main()}`);
+  log(counted(1, `${action1} no commit ${await main()}`));
 
   await pause();
   expectStep(2, "agente 1: push", "accepted", await push(first));
-  log(stepLine("agente 1: push", `aceito, main = ${await main()}`));
+  log(stepLine(2, "agente 1: push", `✓ aceito, main = ${await main()}`));
 
   await pause();
   expectFetchFirst(await push(second));
   log(
     stepLine(
+      3,
       "agente 2: push",
-      "REJEITADO (a main andou; o git não olha os arquivos)",
+      "✗ REJEITADO (a main andou; o git não olha os arquivos)",
     ),
   );
 
@@ -121,7 +136,7 @@ export async function runGitSteps({
   expectStep(4, action4, scenario.sameFile ? "conflict" : "rebased", pulled);
   if (!scenario.sameFile) {
     expectStep(4, action4, "accepted", await push(second));
-    log(stepLine(action4, `aceito, main = ${await main()}`));
+    log(stepLine(4, action4, `✓ aceito, main = ${await main()}`));
     return;
   }
   // The conflicting paths, read from git before the abort clears them (P10).
@@ -141,8 +156,9 @@ export async function runGitSteps({
   );
   log(
     stepLine(
+      4,
       action4,
-      `CONFLITO em ${conflicts}; rebase --abort, main = ${await main()}`,
+      `✗ CONFLITO em ${conflicts}; rebase --abort, main = ${await main()}`,
     ),
   );
 }
