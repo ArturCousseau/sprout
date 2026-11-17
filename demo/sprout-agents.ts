@@ -3,6 +3,12 @@ import { hashContent } from "../src/core/hash.js";
 import { type Barrier, createBarrier } from "./barrier.js";
 import { type Paint, painter } from "./color.js";
 import { HarnessError } from "./harness-error.js";
+import {
+  checkMain,
+  expectedMain,
+  formatMainLine,
+  type MainState,
+} from "./main-check.js";
 import { type AgentResult, summarize } from "./metrics.js";
 import { resultPath, type RunResult, writeResult } from "./results.js";
 import { fileFor, type Scenario } from "./scenarios.js";
@@ -16,6 +22,7 @@ import {
   parseAccepted,
   parseConflicts,
   parseMainRef,
+  parseTree,
 } from "./sprout-responses.js";
 import {
   type SproutServer,
@@ -68,6 +75,12 @@ export async function runSproutScenario({
   let agents: AgentResult[];
   try {
     agents = await runAgents(scenario, server.url, send, log, color);
+    // The main check (#19), inside the try: the server must still answer,
+    // and a divergence goes through the catch below, which stops it (D4).
+    // After allSettled (inside runAgents), so outside the measured time (D3).
+    const expected = expectedMain(scenario, agents, new Map(), hashContent);
+    checkMain(expected, await readSproutMain(send, server.url));
+    log(formatMainLine("sprout", summarize(agents).accepted, color));
   } catch (error) {
     // P1: the first error wins. stop() only rejects after the child closed
     // (SIGKILL), so ignoring its error here never leaves a process behind.
@@ -138,6 +151,40 @@ export async function getMain(send: SproutFetch, url: string): Promise<number> {
   const head = await request(send, "GET", `${url}/refs/main`);
   checkStatus("getMain", head.status);
   return parseMainRef(await readJson(head, "getMain"));
+}
+
+/**
+ * The tree of changeset `id`, path → blobHash, read by
+ * `GET /changesets/:id/tree` on the server at `url` (#19, D6).
+ */
+export async function getTree(
+  send: SproutFetch,
+  url: string,
+  id: number,
+): Promise<ReadonlyMap<string, string>> {
+  const tree = await request(send, "GET", `${url}/changesets/${id}/tree`);
+  checkStatus("getTree", tree.status);
+  return parseTree(await readJson(tree, "getTree"), id);
+}
+
+/**
+ * The main of the server at `url` for the check at the end of a fast run
+ * (#19): the head read by `GET /refs/main` and its tree. The head id stands
+ * for the commit count (D7): the root is 1 and every accepted changeset
+ * takes the next id, so a head of 1 + accepted means no accepted changeset
+ * is missing.
+ *
+ * Sequential ids with no gap are an unverified premise (D7 of #19): they
+ * rest on SQLite's rule for an INTEGER PRIMARY KEY without AUTOINCREMENT
+ * (the next id is the largest one + 1), not on anything this repo checks.
+ * If the premise fails, the check throws a HarnessError instead of passing.
+ */
+export async function readSproutMain(
+  send: SproutFetch,
+  url: string,
+): Promise<MainState> {
+  const head = await getMain(send, url);
+  return { files: await getTree(send, url, head), commits: head };
 }
 
 /**
