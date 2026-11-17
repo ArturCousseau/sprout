@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { painter, stripAnsi } from "./color.js";
 import {
   formatGitEvent,
   type GitEvent,
@@ -494,6 +495,38 @@ describe("formatGitEvent (#20, D4)", () => {
   ])("agent %d, %o", (agent, event, line) => {
     expect(formatGitEvent(agent, event)).toBe(line);
   });
+
+  // Written by hand: the colored lines of section 2 of the plan of #20; the
+  // ref-lock one follows the fetch-first one.
+  it.each<[number, GitEvent, string]>([
+    [
+      3,
+      { kind: "accepted" },
+      "\x1b[2m[git]\x1b[22m agente 3: push \x1b[2m→\x1b[22m \x1b[32m✓ aceito\x1b[39m",
+    ],
+    [
+      7,
+      { kind: "rejected", type: "fetch-first" },
+      "\x1b[2m[git]\x1b[22m agente 7: push \x1b[2m→\x1b[22m \x1b[31m✗ rejeitado\x1b[39m \x1b[2m(fetch-first)\x1b[22m",
+    ],
+    [
+      10,
+      { kind: "rejected", type: "ref-lock" },
+      "\x1b[2m[git]\x1b[22m agente 10: push \x1b[2m→\x1b[22m \x1b[31m✗ rejeitado\x1b[39m \x1b[2m(ref-lock)\x1b[22m",
+    ],
+    [
+      7,
+      { kind: "rebased" },
+      "\x1b[2m[git]\x1b[22m agente 7: pull --rebase \x1b[2m→\x1b[22m ok",
+    ],
+    [
+      2,
+      { kind: "conflict" },
+      "\x1b[2m[git]\x1b[22m agente 2: pull --rebase \x1b[2m→\x1b[22m \x1b[33m✗ conflito\x1b[39m, rebase --abort",
+    ],
+  ])("with color: agent %d, %o", (agent, event, line) => {
+    expect(formatGitEvent(agent, event, painter(true))).toBe(line);
+  });
 });
 
 describe("fast-mode title and separator (#20, D4, P3)", () => {
@@ -538,6 +571,45 @@ describe("fast-mode title and separator (#20, D4, P3)", () => {
       expect(
         middle.filter((line) => line.endsWith("pull --rebase → ok")).length,
       ).toBe(1);
+    },
+    GIT_TIMEOUT,
+  );
+
+  it(
+    "scenario A with color: colored title and separator, known lines between",
+    async () => {
+      const events: string[] = [];
+
+      await runGitScenario({
+        scenario: SCENARIOS.A,
+        baseDir: base,
+        resultsDir: join(base, "resultados"),
+        log: (line) => events.push(line),
+        color: true,
+      });
+
+      // Written by hand, as in the test without color.
+      const possible = [
+        "[git] agente 1: push → ✓ aceito",
+        "[git] agente 1: push → ✗ rejeitado (fetch-first)",
+        "[git] agente 1: push → ✗ rejeitado (ref-lock)",
+        "[git] agente 1: pull --rebase → ok",
+        "[git] agente 2: push → ✓ aceito",
+        "[git] agente 2: push → ✗ rejeitado (fetch-first)",
+        "[git] agente 2: push → ✗ rejeitado (ref-lock)",
+        "[git] agente 2: pull --rebase → ok",
+      ];
+      expect(events[0]).toBe(
+        "\x1b[2m━━\x1b[22m \x1b[1mgit · cenário A · modo rápido\x1b[22m \x1b[2m━━\x1b[22m",
+      );
+      expect(events.at(-2)).toBe(`\x1b[2m${SEPARATOR_A}\x1b[22m`);
+      expect(events).toHaveLength(7);
+      expect(
+        events
+          .slice(1, -2)
+          .map(stripAnsi)
+          .filter((line) => !possible.includes(line)),
+      ).toEqual([]);
     },
     GIT_TIMEOUT,
   );

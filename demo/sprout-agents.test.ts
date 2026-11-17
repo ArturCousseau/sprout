@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { painter, stripAnsi } from "./color.js";
 import { HarnessError } from "./harness-error.js";
 import { readResult } from "./results.js";
 import { SCENARIOS, type Scenario } from "./scenarios.js";
@@ -502,6 +503,30 @@ describe("formatSproutEvent (#20, D4)", () => {
   ])("agent %d, parent %d, %o", (agent, parent, outcome, line) => {
     expect(formatSproutEvent(agent, parent, outcome)).toBe(line);
   });
+
+  // Written by hand: the colored lines of section 2 of the plan of #20.
+  it.each<[number, number, SproutOutcome, string]>([
+    [
+      1,
+      1,
+      { kind: "accepted", newParent: 1 },
+      "\x1b[2m[sprout]\x1b[22m agente 1: changeset \x1b[2m(pai 1)\x1b[22m \x1b[2m→\x1b[22m \x1b[32m✓ aceito\x1b[39m",
+    ],
+    [
+      10,
+      1,
+      { kind: "accepted", newParent: 10 },
+      "\x1b[2m[sprout]\x1b[22m agente 10: changeset \x1b[2m(pai 1)\x1b[22m \x1b[2m→\x1b[22m \x1b[32m✓ aceito\x1b[39m, \x1b[34mpai trocado\x1b[39m para 10",
+    ],
+    [
+      2,
+      1,
+      { kind: "conflict", conflicts: ["conflito.txt"] },
+      "\x1b[2m[sprout]\x1b[22m agente 2: changeset \x1b[2m(pai 1)\x1b[22m \x1b[2m→\x1b[22m \x1b[33m✗ conflito\x1b[39m (conflito.txt)",
+    ],
+  ])("with color: agent %d, parent %d, %o", (agent, parent, outcome, line) => {
+    expect(formatSproutEvent(agent, parent, outcome, painter(true))).toBe(line);
+  });
 });
 
 // Written by hand: the fast-mode title of scenario A and its separator, 38 ━
@@ -540,6 +565,38 @@ describe("fast-mode title and separator (#20, D4, P3)", () => {
       expect(
         middle.filter((line) => line.endsWith(", pai trocado para 2")).length,
       ).toBe(1);
+    },
+    SPROUT_TIMEOUT,
+  );
+
+  it(
+    "scenario A with color: colored title and separator, known lines between",
+    async () => {
+      const events: string[] = [];
+      const log = (line: string): void => {
+        events.push(line);
+      };
+
+      await runSproutScenario(options(SCENARIOS.A, { log, color: true }));
+
+      // Written by hand, as in the test without color.
+      const possible = [
+        "[sprout] agente 1: changeset (pai 1) → ✓ aceito",
+        "[sprout] agente 1: changeset (pai 1) → ✓ aceito, pai trocado para 2",
+        "[sprout] agente 2: changeset (pai 1) → ✓ aceito",
+        "[sprout] agente 2: changeset (pai 1) → ✓ aceito, pai trocado para 2",
+      ];
+      expect(events[0]).toBe(
+        "\x1b[2m━━\x1b[22m \x1b[1msprout · cenário A · modo rápido\x1b[22m \x1b[2m━━\x1b[22m",
+      );
+      expect(events.at(-2)).toBe(`\x1b[2m${SEPARATOR_A}\x1b[22m`);
+      expect(events).toHaveLength(5);
+      expect(
+        events
+          .slice(1, -2)
+          .map(stripAnsi)
+          .filter((line) => !possible.includes(line)),
+      ).toEqual([]);
     },
     SPROUT_TIMEOUT,
   );

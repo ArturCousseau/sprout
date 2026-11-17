@@ -30,12 +30,18 @@ export function formatColumn(summary: RunSummary): string[] {
 
 /**
  * The summary line each system prints at the end of a run (D6, R8), with the
- * same labels and cells as the scoreboard.
+ * same labels and cells as the scoreboard. With color, only the prefix is dim
+ * (L3 of #20).
  */
-export function formatSummaryLine(system: System, summary: RunSummary): string {
+export function formatSummaryLine(
+  system: System,
+  summary: RunSummary,
+  color = false,
+): string {
   const cells = formatColumn(summary);
   const pairs = LABELS.map((label, index) => `${label} ${cells[index]}`);
-  return `[${system}] resumo: ${pairs.join(", ")}`;
+  const prefix = painter(color)("dim", `[${system}]`);
+  return `${prefix} resumo: ${pairs.join(", ")}`;
 }
 
 /** The two modes a run's title names (#20, D4). */

@@ -93,6 +93,22 @@ describe("formatSummaryLine (R8)", () => {
     );
   });
 
+  // Written by hand: only the prefix is dim (L3 of #20).
+  it.each([
+    [
+      "git",
+      gitB,
+      "\x1b[2m[git]\x1b[22m resumo: aceitos 10, rejeições 45, tentativas 55, trocas de pai -, conflitos reais 0, tempo total 1213 ms",
+    ],
+    [
+      "sprout",
+      sproutB,
+      "\x1b[2m[sprout]\x1b[22m resumo: aceitos 10, rejeições 0, tentativas 10, trocas de pai 9, conflitos reais 0, tempo total 110 ms",
+    ],
+  ] as const)("%s with color: dim prefix", (system, summary, line) => {
+    expect(formatSummaryLine(system, summary, true)).toBe(line);
+  });
+
   // Guard R7 of #20: the worst case that still fits the 111-column ceiling,
   // git up to 9999 ms and Sprout up to 999 ms. Green when written; its red
   // is checked by mutation M9.
