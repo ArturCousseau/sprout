@@ -1,4 +1,5 @@
 import { rm } from "node:fs/promises";
+import { type Paint, painter } from "./color.js";
 import { HarnessError } from "./harness-error.js";
 import { resultPath } from "./results.js";
 import { fileFor, type Scenario } from "./scenarios.js";
@@ -47,14 +48,32 @@ const ACTION_WIDTH = 39;
 const STEPS = 3;
 
 /**
- * `[sprout] 3/3 ` plus the text: the prefix and the step counter (P1 of #20).
+ * `[sprout] 3/3 ` plus the text: the prefix (dim) and the step counter (P1 of
+ * #20). `text` may already carry painted pieces.
  */
-function counted(step: number, text: string): string {
-  return `[sprout] ${step}/${STEPS} ${text}`;
+function counted(paint: Paint, step: number, text: string): string {
+  return `${paint("dim", "[sprout]")} ${step}/${STEPS} ${text}`;
 }
 
-function stepLine(step: number, action: string, result: string): string {
-  return counted(step, `${action.padEnd(ACTION_WIDTH)}→ ${result}`);
+/**
+ * One step line: the action, its metadata `(pai = 1)` (dim), the spaces up to
+ * the arrow, and the result. The spaces are counted on the plain text and the
+ * metadata is painted after (R9 of #20): codes never enter the width.
+ */
+function stepLine(
+  paint: Paint,
+  step: number,
+  action: string,
+  meta: string,
+  result: string,
+): string {
+  const spaces = " ".repeat(ACTION_WIDTH - `${action} ${meta}`.length);
+  const arrow = paint("dim", "→");
+  return counted(
+    paint,
+    step,
+    `${action} ${paint("dim", meta)}${spaces}${arrow} ${result}`,
+  );
 }
 
 /**
@@ -142,15 +161,18 @@ async function runSteps(
       ? { status: 201, parent: parseAccepted(body) }
       : { status: 409, conflicts: parseConflicts(body) };
   };
-  const sends = (agent: Prepared): string =>
-    `agente ${agent.agent}: envia changeset (pai = ${agent.parent})`;
   const action = (agent: Prepared): string =>
     `agente ${agent.agent}: envia changeset`;
+  const meta = (agent: Prepared): string => `(pai = ${agent.parent})`;
+
+  // Every line goes through paint (D1 of #20). Still without color here.
+  const paint = painter(false);
+  const accepted = paint("green", "✓ aceito");
 
   // The title and the Enter line replace the one-line header of R9 of #17
   // (D4, R12 of #20).
   log(formatRunTitle("sprout", scenario.id, "passo a passo"));
-  log("[sprout] Enter antes de cada etapa");
+  log(`${paint("dim", "[sprout]")} Enter antes de cada etapa`);
 
   await pause();
   const start = await getMain(send, url);
@@ -158,7 +180,7 @@ async function runSteps(
   for (const agent of [first, second]) {
     expectStep(1, action1, `parent ${start}`, `parent ${agent.parent}`);
   }
-  log(counted(1, `${action1} no changeset ${start}`));
+  log(counted(paint, 1, `${action1} no changeset ${start}`));
 
   await pause();
   const answer1 = await post(first);
@@ -169,7 +191,15 @@ async function runSteps(
     describeAnswer(answer1, first.parent),
   );
   const afterFirst = await getMain(send, url);
-  log(stepLine(2, sends(first), `✓ aceito, main = ${afterFirst}`));
+  log(
+    stepLine(
+      paint,
+      2,
+      action(first),
+      meta(first),
+      `${accepted}, main = ${afterFirst}`,
+    ),
+  );
 
   await pause();
   const answer2 = await post(second);
@@ -189,9 +219,15 @@ async function runSteps(
   }
   const result =
     answer2.status === 409
-      ? `✗ CONFLITO (${answer2.conflicts.join(", ")} mudou depois do pai ${second.parent})`
-      : `✓ aceito, pai trocado para ${answer2.parent} (outro arquivo)`;
+      ? `${paint("yellow", "✗ CONFLITO")} (${answer2.conflicts.join(", ")} mudou depois do pai ${second.parent})`
+      : `${accepted}, ${paint("blue", "pai trocado")} para ${answer2.parent} (outro arquivo)`;
   log(
-    stepLine(3, sends(second), `${result}, main = ${await getMain(send, url)}`),
+    stepLine(
+      paint,
+      3,
+      action(second),
+      meta(second),
+      `${result}, main = ${await getMain(send, url)}`,
+    ),
   );
 }
