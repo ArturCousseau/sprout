@@ -13,6 +13,7 @@ import {
   localGitConfig,
 } from "./git.js";
 import { HarnessError } from "./harness-error.js";
+import type { MainState } from "./main-check.js";
 import { type AgentResult, type RejectionType, summarize } from "./metrics.js";
 import { resultPath, type RunResult, writeResult } from "./results.js";
 import { fileFor, type Scenario } from "./scenarios.js";
@@ -92,7 +93,7 @@ export interface PrepareGitRunOptions {
   scenario: Scenario;
 }
 
-const README = "Repositório central da demo do Sprout.\n";
+export const README = "Repositório central da demo do Sprout.\n";
 const AGENT_CLONE = /^git-agente-\d+$/;
 
 /**
@@ -144,6 +145,76 @@ export async function prepareGitRun({
     await gitOk(["clone", "-q", central, clone]);
     await configure(clone, localGitConfig(n));
   }
+}
+
+/** One file of `git ls-tree -r -z`: its path and its blob id. */
+export interface LsTreeEntry {
+  path: string;
+  id: string;
+}
+
+/** `<mode> blob <id>\t<path>`: a regular file; the id is SHA-1 or SHA-256. */
+const LS_TREE_BLOB = /^\d{6} blob ([0-9a-f]{40}|[0-9a-f]{64})\t(.+)$/s;
+
+/**
+ * The files of `git ls-tree -r -z` stdout: `<mode> blob <id>\t<path>`, each
+ * entry ending in NUL. With `-r` the demo's main has only blobs, so any other
+ * entry (a tree, a submodule) or a malformed one is a HarnessError (#19).
+ * An output that does not end in NUL is cut short: also a HarnessError (A8).
+ * An empty output (no files) gives no entries.
+ */
+export function parseLsTree(stdout: string): LsTreeEntry[] {
+  // Every entry ends in NUL, so the last piece after the split must be empty.
+  const pieces = stdout.split("\u0000");
+  if (pieces.pop() !== "") {
+    throw new HarnessError(
+      `git ls-tree: output does not end in NUL (got ${JSON.stringify(stdout)})`,
+    );
+  }
+  return pieces.map((entry) => {
+    const match = LS_TREE_BLOB.exec(entry);
+    if (match === null) {
+      throw new HarnessError(
+        `git ls-tree: unexpected entry (got ${JSON.stringify(entry)})`,
+      );
+    }
+    const [, id, path] = match;
+    return { path, id };
+  });
+}
+
+/**
+ * The commit count of `git rev-list --count` stdout: digits and one "\n".
+ * Anything else (empty, not a number, no newline) is a HarnessError (A9).
+ */
+export function parseRevListCount(stdout: string): number {
+  if (!/^\d+\n$/.test(stdout)) {
+    throw new HarnessError(
+      `git rev-list --count: not a count (got ${JSON.stringify(stdout)})`,
+    );
+  }
+  return Number(stdout);
+}
+
+/**
+ * The main of the central repo (#19, D2, D7): each file's content read with
+ * `git cat-file blob`, so git's object format is never rebuilt in Node, and
+ * the commit count of `git rev-list --count main`. One `ls-tree`, one
+ * `cat-file` per file and one `rev-list`, all through runGit, after the
+ * measured time.
+ */
+export async function readGitMain(central: string): Promise<MainState> {
+  const entries = parseLsTree(
+    await gitOk(["-C", central, "ls-tree", "-r", "-z", "main"]),
+  );
+  const files = new Map<string, string>();
+  for (const { path, id } of entries) {
+    files.set(path, await gitOk(["-C", central, "cat-file", "blob", id]));
+  }
+  const commits = parseRevListCount(
+    await gitOk(["-C", central, "rev-list", "--count", "main"]),
+  );
+  return { files, commits };
 }
 
 async function configure(

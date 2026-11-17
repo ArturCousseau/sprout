@@ -10,11 +10,14 @@ import {
   formatGitEvent,
   type GitEvent,
   gitOk,
+  parseLsTree,
+  parseRevListCount,
   prepareGitRun,
+  readGitMain,
   runGit,
   runGitScenario,
 } from "./git-agents.js";
-import { checkGitAttempts } from "./git.js";
+import { checkGitAttempts, identityGitConfig } from "./git.js";
 import { HarnessError } from "./harness-error.js";
 import { readResult, type RunResult } from "./results.js";
 import { SCENARIOS, type ScenarioId } from "./scenarios.js";
@@ -265,6 +268,122 @@ describe("criterion 4: agent cycle", () => {
           ]),
         ).toBe(`agente-${n}|agente ${n}`);
       }
+    },
+    GIT_TIMEOUT,
+  );
+});
+
+// Written by hand: blob ids of 40 hex chars (the values do not matter here).
+const ID1 = "1111111111111111111111111111111111111111";
+const ID2 = "2222222222222222222222222222222222222222";
+const ID3 = "3333333333333333333333333333333333333333";
+
+describe("main check: reading the git main (#19)", () => {
+  // Written by hand in the format seen with `od -c` (git 2.56.0):
+  // `<mode> blob <id>\t<path>\0`, the last entry also ending in \0.
+  it.each([
+    [
+      "two entries",
+      `100644 blob ${ID1}\tREADME.md\u0000100644 blob ${ID2}\tagente 1.txt\u0000`,
+      [
+        { path: "README.md", id: ID1 },
+        { path: "agente 1.txt", id: ID2 },
+      ],
+    ],
+    ["empty output", "", []],
+  ])("GR1 parseLsTree: %s → path and blob id", (_label, stdout, entries) => {
+    expect(parseLsTree(stdout)).toEqual(entries);
+  });
+
+  it.each([
+    [
+      "a tree entry",
+      `100644 blob ${ID1}\tREADME.md\u0000040000 tree ${ID3}\tdir\u0000`,
+      `git ls-tree: unexpected entry (got "040000 tree ${ID3}\\tdir")`,
+    ],
+    [
+      "a malformed entry",
+      "100644 blob abc\tREADME.md\u0000",
+      'git ls-tree: unexpected entry (got "100644 blob abc\\tREADME.md")',
+    ],
+    [
+      "no trailing NUL",
+      `100644 blob ${ID1}\tREADME.md`,
+      `git ls-tree: output does not end in NUL (got "100644 blob ${ID1}\\tREADME.md")`,
+    ],
+  ])("GR2 parseLsTree: %s → HarnessError", (_label, stdout, message) => {
+    expect(() => parseLsTree(stdout)).toThrow(HarnessError);
+    expect(() => parseLsTree(stdout)).toThrow(
+      new RegExp(`^${message.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
+    );
+  });
+
+  // Written by hand: what `git rev-list --count main` prints is the count
+  // and one "\n"; anything else is a HarnessError (A9).
+  it.each([['"3\\n"', "3\n", 3]])(
+    "GR5 parseRevListCount(%s) → %i",
+    (_label, stdout, count) => {
+      expect(parseRevListCount(stdout)).toBe(count);
+    },
+  );
+
+  it.each([
+    ['""', "", 'git rev-list --count: not a count (got "")'],
+    ['"abc\\n"', "abc\n", 'git rev-list --count: not a count (got "abc\\n")'],
+    ['"3"', "3", 'git rev-list --count: not a count (got "3")'],
+  ])("GR5 parseRevListCount(%s) → HarnessError", (_label, stdout, message) => {
+    expect(() => parseRevListCount(stdout)).toThrow(HarnessError);
+    expect(() => parseRevListCount(stdout)).toThrow(
+      new RegExp(`^${message.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
+    );
+  });
+
+  it(
+    "GR3 readGitMain: a fresh central has only the README, 1 commit",
+    async () => {
+      await prepareGitRun({
+        baseDir: base,
+        resultsDir: join(base, "resultados"),
+        scenario: SCENARIOS.A,
+      });
+
+      expect(await readGitMain(join(base, "central.git"))).toEqual({
+        files: new Map([
+          ["README.md", "Repositório central da demo do Sprout.\n"],
+        ]),
+        commits: 1,
+      });
+    },
+    GIT_TIMEOUT,
+  );
+
+  it(
+    "GR4 readGitMain: an intruder's file shows up, 2 commits",
+    async () => {
+      const central = join(base, "central.git");
+      await prepareGitRun({
+        baseDir: base,
+        resultsDir: join(base, "resultados"),
+        scenario: SCENARIOS.A,
+      });
+      // The intruder of #17 (git-steps.test.ts): a clone that is not an agent.
+      const intruder = join(base, "intruso");
+      await gitOk(["clone", "-q", central, intruder]);
+      for (const [key, value] of identityGitConfig("intruso")) {
+        await gitOk(["-C", intruder, "config", key, value]);
+      }
+      await writeFile(join(intruder, "intruso.txt"), "intruso\n");
+      await gitOk(["-C", intruder, "add", "intruso.txt"]);
+      await gitOk(["-C", intruder, "commit", "-q", "-m", "intruso"]);
+      await gitOk(["-C", intruder, "push", "-q", "origin", "main"]);
+
+      expect(await readGitMain(central)).toEqual({
+        files: new Map([
+          ["README.md", "Repositório central da demo do Sprout.\n"],
+          ["intruso.txt", "intruso\n"],
+        ]),
+        commits: 2,
+      });
     },
     GIT_TIMEOUT,
   );
