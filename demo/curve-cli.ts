@@ -2,15 +2,18 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   CURVE_PATH,
+  CURVE_ROUNDS,
   curvePlan,
   curveScenario,
   formatCurve,
   formatCurveProgress,
   type MeasuredCurveRun,
 } from "./curve.js";
+import { HarnessError } from "./harness-error.js";
 import { formatMarkdown, isDirty } from "./measure.js";
 import type { MeasureCliOptions, MeasureIo } from "./measure-cli.js";
 import { summarize } from "./metrics.js";
+import type { RunResult } from "./results.js";
 
 /**
  * Everything the curve reads or runs, injected: the same shape as the
@@ -22,7 +25,9 @@ export type CurveCliOptions = MeasureCliOptions;
 /**
  * `demo:curva` (#50): runs the 24 runs of curvePlan, one at a time, and
  * writes docs/curva.md. Always ends with `io.exit`. 0: the 24 runs finished
- * and the file was written. 2: any argument.
+ * and the file was written. 1: a HarnessError in a run, named on stderr with
+ * its round, system and N; the file is not touched. 2: any argument. Any
+ * other error is a bug and is rethrown.
  */
 export async function runCurveCli(
   argv: string[],
@@ -44,10 +49,22 @@ export async function runCurveCli(
   const runs: MeasuredCurveRun[] = [];
   for (const [index, planned] of plan.entries()) {
     const scenario = curveScenario(planned.n);
-    const result =
-      planned.system === "git"
-        ? await options.runGit({ scenario, baseDir, resultsDir, log })
-        : await options.runSprout({ scenario, dataDir, resultsDir, log });
+    let result: RunResult;
+    try {
+      result =
+        planned.system === "git"
+          ? await options.runGit({ scenario, baseDir, resultsDir, log })
+          : await options.runSprout({ scenario, dataDir, resultsDir, log });
+    } catch (error) {
+      if (error instanceof HarnessError) {
+        // The first harness error stops everything; the file is untouched.
+        io.stderr.write(
+          `demo:curva: run ${planned.round}/${CURVE_ROUNDS}, ${planned.system} N=${planned.n}: ${error.message}\n`,
+        );
+        return io.exit(1);
+      }
+      throw error; // a bug, not a harness error
+    }
     const summary = summarize(result.agents);
     runs.push({ ...planned, summary });
     io.stdout.write(

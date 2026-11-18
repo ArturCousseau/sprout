@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type CurveCliOptions, runCurveCli } from "./curve-cli.js";
 import type { RunGitScenarioOptions } from "./git-agents.js";
+import { HarnessError } from "./harness-error.js";
 import type { MeasureIo } from "./measure-cli.js";
 import type { AgentResult } from "./metrics.js";
 import type { RunResult, System } from "./results.js";
@@ -270,5 +271,36 @@ describe("demo:curva runs (D6, D2, D10, D11)", () => {
           (line) => JSON.stringify(cells(line)) === JSON.stringify(expected),
         ),
     ).toHaveLength(1);
+  });
+});
+
+describe("demo:curva failure (D8, D11)", () => {
+  it("exits 1 on a HarnessError in run 2/3, git N=20, without touching the file (L5)", async () => {
+    const { io, err, codes } = fakeIo();
+    // A round has 4 N × 2 systems = 8 runs, so round 2 is calls 9 to 16:
+    // git 2, sprout 2, git 5, sprout 5, git 10, sprout 10, git 20 (call 15).
+    const runners = fakeRunners((n) =>
+      n === 15 ? new HarnessError("boom") : undefined,
+    );
+
+    await expect(runCurveCli([], io, cliOptions(runners))).rejects.toThrow(
+      ExitCalled,
+    );
+
+    expect(codes).toEqual([1]);
+    expect(err).toEqual(["demo:curva: run 2/3, git N=20: boom\n"]);
+    expect(runners.calls).toHaveLength(15);
+    expect(await readFile(curveFile, "utf8")).toBe("antigo\n");
+  });
+
+  it("rethrows an error that is not a HarnessError, without touching the file (L6)", async () => {
+    const { io, codes } = fakeIo();
+    const bug = new Error("bug");
+    const runners = fakeRunners((n) => (n === 1 ? bug : undefined));
+
+    await expect(runCurveCli([], io, cliOptions(runners))).rejects.toBe(bug);
+
+    expect(codes).toEqual([]);
+    expect(await readFile(curveFile, "utf8")).toBe("antigo\n");
   });
 });
