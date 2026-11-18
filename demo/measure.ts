@@ -1,3 +1,4 @@
+import { format, resolveConfig } from "prettier";
 import type { RunSummary } from "./metrics.js";
 import type { System } from "./results.js";
 import type { ScenarioId } from "./scenarios.js";
@@ -273,6 +274,18 @@ const CAVEATS = [
   "Com 5 amostras, a variação é dada pelo mínimo–máximo, sem desvio padrão; média e mediana são arredondadas só no fim.",
   "Os agentes são rotinas com roteiro fixo, não modelos de IA.",
 ];
+
+/**
+ * `md` formatted by prettier with the repo config for `filepath` (D10), so
+ * the written file passes `pnpm format:check` as is.
+ */
+export async function formatMarkdown(
+  md: string,
+  filepath: string,
+): Promise<string> {
+  const config = await resolveConfig(filepath);
+  return format(md, { ...config, filepath });
+}
 
 /** The runs of one scenario and system, by round. */
 interface RunGroup {

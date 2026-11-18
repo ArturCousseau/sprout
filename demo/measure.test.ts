@@ -1,8 +1,11 @@
+import { join } from "node:path";
+import { check, resolveConfig } from "prettier";
 import { describe, expect, it } from "vitest";
 import type { RunSummary } from "./metrics.js";
 import {
   changedPaths,
   formatCount,
+  formatMarkdown,
   formatMemory,
   formatProgress,
   formatResults,
@@ -343,5 +346,18 @@ describe("formatResults", () => {
     const md = formatResults(fixtureInput());
 
     expect(countLine(md, "Medido em 18/11/2026 14:30.")).toBe(1);
+  });
+});
+
+describe("formatMarkdown (D10)", () => {
+  it("gives Markdown that prettier's check accepts with the repo config (T23)", async () => {
+    const filepath = join(import.meta.dirname, "..", "docs", "resultados.md");
+    const raw = formatResults(fixtureInput());
+
+    const formatted = await formatMarkdown(raw, filepath);
+
+    expect(formatted).not.toBe(raw);
+    const config = await resolveConfig(filepath);
+    expect(await check(formatted, { ...config, filepath })).toBe(true);
   });
 });
