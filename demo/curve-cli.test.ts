@@ -303,4 +303,69 @@ describe("demo:curva failure (D8, D11)", () => {
     expect(codes).toEqual([]);
     expect(await readFile(curveFile, "utf8")).toBe("antigo\n");
   });
+
+  it("exits 1 on a HarnessError while reading the environment (L9)", async () => {
+    const { io, out, err, codes } = fakeIo();
+    const runners = fakeRunners();
+    const options: CurveCliOptions = {
+      ...cliOptions(runners),
+      readTree: () => Promise.reject(new HarnessError("x")),
+    };
+
+    await expect(runCurveCli([], io, options)).rejects.toThrow(ExitCalled);
+
+    expect(codes).toEqual([1]);
+    expect(err).toEqual(["demo:curva: x\n"]);
+    expect(await readFile(curveFile, "utf8")).toBe("antigo\n");
+    const lines = out.join("").split("\n");
+    expect(lines.pop()).toBe(""); // the output ends in "\n"
+    expect(lines).toHaveLength(24);
+    expect(
+      lines.filter((line) => line.startsWith("curva gravada")),
+    ).toHaveLength(0);
+  });
+});
+
+/** How many lines of `text` start with `prefix`. */
+function countStarting(text: string, prefix: string): number {
+  return text.split("\n").filter((line) => line.startsWith(prefix)).length;
+}
+
+describe("demo:curva uncommitted changes (D5)", () => {
+  it("does not warn when only docs/curva.md changed (L7)", async () => {
+    const { io, err, codes } = fakeIo();
+    const runners = fakeRunners();
+
+    await expect(
+      runCurveCli([], io, cliOptions(runners, ["docs/curva.md"])),
+    ).rejects.toThrow(ExitCalled);
+
+    expect(codes).toEqual([0]);
+    expect(err).toEqual([]);
+    expect(countStarting(await readFile(curveFile, "utf8"), "> Aviso:")).toBe(
+      0,
+    );
+  });
+
+  it("warns in the file and on stderr when docs/resultados.md changed (L8)", async () => {
+    const { io, err, codes } = fakeIo();
+    const runners = fakeRunners();
+
+    // For the curve, docs/resultados.md is a change like any other file.
+    await expect(
+      runCurveCli([], io, cliOptions(runners, ["docs/resultados.md"])),
+    ).rejects.toThrow(ExitCalled);
+
+    expect(codes).toEqual([0]);
+    expect(
+      err.filter(
+        (line) =>
+          line ===
+          "demo:curva: warning: uncommitted changes; commit cb26b14 does not describe all the measured code\n",
+      ),
+    ).toHaveLength(1);
+    expect(countStarting(await readFile(curveFile, "utf8"), "> Aviso:")).toBe(
+      1,
+    );
+  });
 });

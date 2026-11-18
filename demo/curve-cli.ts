@@ -11,7 +11,7 @@ import {
 } from "./curve.js";
 import { HarnessError } from "./harness-error.js";
 import { formatMarkdown, isDirty } from "./measure.js";
-import type { MeasureCliOptions, MeasureIo } from "./measure-cli.js";
+import type { MeasureCliOptions, MeasureIo, RepoTree } from "./measure-cli.js";
 import { summarize } from "./metrics.js";
 import type { RunResult } from "./results.js";
 
@@ -26,8 +26,10 @@ export type CurveCliOptions = MeasureCliOptions;
  * `demo:curva` (#50): runs the 24 runs of curvePlan, one at a time, and
  * writes docs/curva.md. Always ends with `io.exit`. 0: the 24 runs finished
  * and the file was written. 1: a HarnessError in a run, named on stderr with
- * its round, system and N; the file is not touched. 2: any argument. Any
- * other error is a bug and is rethrown.
+ * its round, system and N, or while reading the environment (tree, machine,
+ * versions); the file is not touched. With uncommitted changes (other than
+ * docs/curva.md), a warning on stderr. 2: any argument. Any other error is a
+ * bug and is rethrown.
  */
 export async function runCurveCli(
   argv: string[],
@@ -72,16 +74,33 @@ export async function runCurveCli(
     );
   }
 
+  // The three environment readers in one block: a HarnessError from any of
+  // them stops before the file is written, without `run k/3`.
   const filepath = join(options.repoRoot, CURVE_PATH);
-  const tree = await options.readTree();
-  const md = formatCurve({
-    when: options.now(),
-    commit: tree.commit,
-    dirty: isDirty(tree.changed, CURVE_PATH),
-    machine: await options.readMachine(),
-    versions: await options.readVersions(),
-    runs,
-  });
+  let tree: RepoTree;
+  let md: string;
+  try {
+    tree = await options.readTree();
+    md = formatCurve({
+      when: options.now(),
+      commit: tree.commit,
+      dirty: isDirty(tree.changed, CURVE_PATH),
+      machine: await options.readMachine(),
+      versions: await options.readVersions(),
+      runs,
+    });
+  } catch (error) {
+    if (error instanceof HarnessError) {
+      io.stderr.write(`demo:curva: ${error.message}\n`);
+      return io.exit(1);
+    }
+    throw error; // a bug, not a harness error
+  }
+  if (isDirty(tree.changed, CURVE_PATH)) {
+    io.stderr.write(
+      `demo:curva: warning: uncommitted changes; commit ${tree.commit} does not describe all the measured code\n`,
+    );
+  }
   await writeFile(filepath, await formatMarkdown(md, filepath));
   io.stdout.write(`curva gravada em ${CURVE_PATH}\n`);
   return io.exit(0);
