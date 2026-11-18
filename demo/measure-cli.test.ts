@@ -252,4 +252,72 @@ describe("demo:medir failure (D2, D11)", () => {
     expect(codes).toEqual([]);
     expect(await readFile(resultsFile, "utf8")).toBe("antigo\n");
   });
+
+  it("exits 1 on a HarnessError while reading the environment (C9)", async () => {
+    const { io, out, err, codes } = fakeIo();
+    const runners = fakeRunners();
+    const options: MeasureCliOptions = {
+      ...cliOptions(runners),
+      readTree: () => Promise.reject(new HarnessError("x")),
+    };
+
+    await expect(runMeasureCli([], io, options)).rejects.toThrow(ExitCalled);
+
+    expect(codes).toEqual([1]);
+    expect(err).toEqual(["demo:medir: x\n"]);
+    expect(await readFile(resultsFile, "utf8")).toBe("antigo\n");
+    const lines = out.join("").split("\n");
+    expect(lines.pop()).toBe(""); // the output ends in "\n"
+    expect(lines).toHaveLength(30);
+    expect(
+      lines.filter((line) => line.startsWith("resultados gravados")),
+    ).toHaveLength(0);
+  });
+});
+
+/** How many lines of `text` start with `prefix`. */
+function countStarting(text: string, prefix: string): number {
+  return text.split("\n").filter((line) => line.startsWith(prefix)).length;
+}
+
+describe("demo:medir uncommitted changes (D9)", () => {
+  it("does not warn when only docs/resultados.md changed (C7)", async () => {
+    const { io, err, codes } = fakeIo();
+    const runners = fakeRunners();
+
+    await expect(
+      runMeasureCli([], io, cliOptions(runners, ["docs/resultados.md"])),
+    ).rejects.toThrow(ExitCalled);
+
+    expect(codes).toEqual([0]);
+    expect(err).toEqual([]);
+    expect(countStarting(await readFile(resultsFile, "utf8"), "> Aviso:")).toBe(
+      0,
+    );
+  });
+
+  it("warns in the file and on stderr when another file changed (C8)", async () => {
+    const { io, err, codes } = fakeIo();
+    const runners = fakeRunners();
+
+    await expect(
+      runMeasureCli(
+        [],
+        io,
+        cliOptions(runners, ["docs/resultados.md", "demo/x.ts"]),
+      ),
+    ).rejects.toThrow(ExitCalled);
+
+    expect(codes).toEqual([0]);
+    expect(
+      err.filter(
+        (line) =>
+          line ===
+          "demo:medir: warning: uncommitted changes; commit 9891810 does not describe all the measured code\n",
+      ),
+    ).toHaveLength(1);
+    expect(countStarting(await readFile(resultsFile, "utf8"), "> Aviso:")).toBe(
+      1,
+    );
+  });
 });

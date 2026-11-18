@@ -51,7 +51,9 @@ export interface MeasureCliOptions {
  * `demo:medir` (#21): runs the 30 runs of measurementPlan, one at a time,
  * and writes docs/resultados.md. Always ends with `io.exit`. 0: the 30 runs
  * finished and the file was written. 1: a HarnessError in a run, named on
- * stderr with its round, system and scenario; the file is not touched.
+ * stderr with its round, system and scenario, or while reading the
+ * environment (tree, machine, versions); the file is not touched. With
+ * uncommitted changes (other than docs/resultados.md), a warning on stderr.
  * 2: any argument. Any other error is a bug and is rethrown.
  */
 export async function runMeasureCli(
@@ -97,16 +99,33 @@ export async function runMeasureCli(
     );
   }
 
-  const tree = await options.readTree();
+  // The three environment readers in one block: a HarnessError from any of
+  // them stops before the file is written, without `run k/5`.
   const filepath = join(options.repoRoot, RESULTS_PATH);
-  const md = formatResults({
-    when: options.now(),
-    commit: tree.commit,
-    dirty: isDirty(tree.changed),
-    machine: await options.readMachine(),
-    versions: await options.readVersions(),
-    runs,
-  });
+  let tree: RepoTree;
+  let md: string;
+  try {
+    tree = await options.readTree();
+    md = formatResults({
+      when: options.now(),
+      commit: tree.commit,
+      dirty: isDirty(tree.changed),
+      machine: await options.readMachine(),
+      versions: await options.readVersions(),
+      runs,
+    });
+  } catch (error) {
+    if (error instanceof HarnessError) {
+      io.stderr.write(`demo:medir: ${error.message}\n`);
+      return io.exit(1);
+    }
+    throw error; // a bug, not a harness error
+  }
+  if (isDirty(tree.changed)) {
+    io.stderr.write(
+      `demo:medir: warning: uncommitted changes; commit ${tree.commit} does not describe all the measured code\n`,
+    );
+  }
   await writeFile(filepath, await formatMarkdown(md, filepath));
   io.stdout.write(`resultados gravados em ${RESULTS_PATH}\n`);
   return io.exit(0);
