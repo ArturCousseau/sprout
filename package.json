@@ -18,7 +18,8 @@
     "demo:reset": "tsx demo/reset-main.ts",
     "demo:git": "tsx demo/git-main.ts",
     "demo:sprout": "tsx demo/sprout-main.ts",
-    "demo:placar": "tsx demo/scoreboard-main.ts"
+    "demo:placar": "tsx demo/scoreboard-main.ts",
+    "demo:medir": "tsx demo/measure-main.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

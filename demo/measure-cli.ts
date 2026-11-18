@@ -1,8 +1,11 @@
+import { execFile } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import type { RunGitScenarioOptions } from "./git-agents.js";
 import { HarnessError } from "./harness-error.js";
 import {
+  changedPaths,
   formatMarkdown,
   formatProgress,
   formatResults,
@@ -30,6 +33,49 @@ export interface RepoTree {
   commit: string;
   /** Paths of `git status --porcelain=v1 -z --no-renames`. */
   changed: string[];
+}
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * `git <args>` in `cwd` with the user's own environment: unlike runGit and
+ * gitOk, no gitEnv, so the measured repository is read as the user sees it,
+ * global `core.excludesFile` included (A1). A failure is a HarnessError with
+ * git's stderr. Returns stdout.
+ */
+async function userGit(args: string[], cwd: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync("git", args, {
+      cwd,
+      env: process.env,
+      encoding: "utf8",
+    });
+    return stdout;
+  } catch (error) {
+    const stderr = (error as { stderr?: unknown }).stderr;
+    throw new HarnessError(
+      `git ${args.join(" ")}: ${typeof stderr === "string" && stderr.trim() !== "" ? stderr.trim() : (error as Error).message}`,
+      { cause: error },
+    );
+  }
+}
+
+/**
+ * The measured repository at `repoRoot` (D9, A1): the short hash of HEAD and
+ * the raw and parsed `git status --porcelain=v1 -z --no-renames`. Not tested:
+ * it runs the real git; step 13 of the plan compares it with the terminal.
+ */
+export async function readRepoTree(
+  repoRoot: string,
+): Promise<RepoTree & { rawStatus: string }> {
+  const commit = (
+    await userGit(["rev-parse", "--short", "HEAD"], repoRoot)
+  ).trim();
+  const rawStatus = await userGit(
+    ["status", "--porcelain=v1", "-z", "--no-renames"],
+    repoRoot,
+  );
+  return { commit, rawStatus, changed: changedPaths(rawStatus) };
 }
 
 /** Everything the measurement reads or runs, injected (D1). */
