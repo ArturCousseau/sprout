@@ -160,6 +160,12 @@ mostra só as linhas de evento e o resumo. Se o git nem chegou a rodar até o fi
 stderr para mostrar: a mensagem traz o comando e o motivo (`cannot start git`
 ou `killed by <sinal>`).
 
+A `main` do `central.git` diferente do esperado na conferência do fim (§6)
+também é erro do harness, e a saída do `git ls-tree` ou do `git rev-list
+--count` fora do formato nessa leitura também. A conferência roda depois de
+todos os agentes terminarem, então a mensagem é uma só (`main check: …`), sem
+JSON e com código 1.
+
 ### O teto de tentativas
 
 Antes de cada push, o harness soma 1 ao total de pushes da execução (todos os
@@ -336,10 +342,13 @@ Como no git (§3), estes casos são erro do harness, não métrica:
 
 - status fora do esperado (`checkStatus` em `demo/sprout-responses.ts`): `200`
   no `GET /refs/main`, `201` ou `200` no `PUT /blobs/:hash`, `201` ou `409` no
-  `POST /changesets`;
+  `POST /changesets`, `200` no `GET /changesets/:id/tree`;
 - corpo de resposta fora do formato: `id` que não é inteiro no
   `GET /refs/main`, `parent` que não é inteiro no `201`, `conflicts` que não é
-  uma lista de textos não vazia no `409`, corpo que não é JSON;
+  uma lista de textos não vazia no `409`, corpo que não é JSON; no
+  `GET /changesets/:id/tree`, `id` diferente do pedido, `entries` que não é uma
+  lista de `{ path, blobHash }` com textos, ou caminho repetido;
+- `main` diferente do esperado na conferência do fim (§6);
 - servidor inacessível (o `fetch` falhou: conexão recusada ou reiniciada) ou que
   morreu durante a execução;
 - servidor que não fica pronto ou não para (acima).
@@ -347,7 +356,9 @@ Como no git (§3), estes casos são erro do harness, não métrica:
 O tratamento também é o do git: o harness espera todos os agentes terminarem
 (`Promise.allSettled`), **não grava o JSON**, escreve no stderr a mensagem de
 cada agente que falhou e sai com **código 1**. Uma falha antes da barreira para
-a execução ali, com uma mensagem só.
+a execução ali, com uma mensagem só. A conferência da `main` roda com o
+servidor ainda de pé; quando ela falha, o servidor é encerrado do mesmo jeito
+que nos outros erros, e a mensagem é uma só (`main check: …`).
 
 ## 5. Os modos
 
@@ -361,15 +372,17 @@ As linhas saem coloridas quando a saída vai para um terminal (§8):
 
 - em cinza: o prefixo `[git]`/`[sprout]`, o `→`, os hashes do git, o
   `(pai = 1)` do Sprout e o tipo da rejeição (`(fetch-first)`);
-- em verde: `✓ aceito`;
+- em verde: `✓ aceito` e, na linha da conferência da `main` (§6), o
+  `✓ 2 commits aceitos` inteiro;
 - em vermelho: `✗ REJEITADO` e `✗ rejeitado`;
 - em amarelo: `✗ CONFLITO` e `✗ conflito`;
 - em azul: `pai trocado`;
 - o título de cada execução tem os `━━` em cinza e o texto do meio em
   negrito; o separador do modo rápido sai inteiro em cinza.
 
-O resto da linha (ids, nomes de arquivo, o `ok` do `pull --rebase`) fica sem
-cor. Sem cor, o texto é o mesmo, caractere por caractere.
+O resto da linha (ids, nomes de arquivo, o `ok` do `pull --rebase`, o
+`na main (arquivos, conteúdo e contagem)`) fica sem cor. Sem cor, o texto é o
+mesmo, caractere por caractere.
 
 ### Passo a passo (cenários A e C)
 
@@ -456,26 +469,34 @@ Os N agentes rodam em paralelo, com o ponto de sincronização. A saída começa
 com o título da execução, impresso depois da preparação e antes de a barreira
 existir, portanto fora do tempo total (§6). Depois vem uma linha por evento
 (pode rolar rápido, é o efeito desejado), cuja ordem varia de uma execução
-para outra. No fim, um separador de `━` da largura do título e o resumo daquele
-sistema, com os mesmos rótulos e valores do placar (§6). O separador e o resumo
-só aparecem quando a execução termina; num erro do harness, nenhum dos dois
-sai. Um trecho do git (os números variam de uma execução para outra):
+para outra. No fim, a linha da conferência da `main` (§6), um separador de `━`
+da largura do título e o resumo daquele sistema, com os mesmos rótulos e
+valores do placar (§6). O separador e o resumo só aparecem quando a execução
+termina; num erro do harness, nenhum dos dois sai. A linha da conferência só
+aparece quando a `main` passou; numa divergência, ela também não sai. Um
+trecho do git (os números variam de uma execução para outra):
 
 ```
 ━━ git · cenário B · modo rápido ━━
-[git] agente 3: push → ✓ aceito
+[git] agente 8: push → ✗ rejeitado (fetch-first)
 [git] agente 7: push → ✗ rejeitado (fetch-first)
-[git] agente 10: push → ✗ rejeitado (ref-lock)
-[git] agente 7: pull --rebase → ok
+[git] agente 3: push → ✗ rejeitado (ref-lock)
+[git] agente 2: push → ✗ rejeitado (ref-lock)
+[git] agente 1: push → ✓ aceito
 …
+[git] agente 2: pull --rebase → ok
+[git] agente 2: push → ✓ aceito
+[git] main conferida → ✓ 10 commits aceitos na main (arquivos, conteúdo e contagem)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[git] resumo: aceitos 10, rejeições 45, tentativas 55, trocas de pai -, conflitos reais 0, tempo total 1047 ms
+[git] resumo: aceitos 10, rejeições 45, tentativas 55, trocas de pai -, conflitos reais 0, tempo total 1232 ms
 ```
 
-No cenário C, o conflito real do git sai assim:
+No cenário C, o conflito real do git sai assim, e a linha da conferência fica
+no singular:
 
 ```
 [git] agente 2: pull --rebase → ✗ conflito, rebase --abort
+[git] main conferida → ✓ 1 commit aceito na main (arquivos, conteúdo e contagem)
 ```
 
 No Sprout, cada agente imprime uma linha só, com o pai que enviou:
@@ -483,16 +504,18 @@ No Sprout, cada agente imprime uma linha só, com o pai que enviou:
 ```
 ━━ sprout · cenário B · modo rápido ━━
 [sprout] agente 1: changeset (pai 1) → ✓ aceito
-[sprout] agente 10: changeset (pai 1) → ✓ aceito, pai trocado para 10
 …
+[sprout] agente 10: changeset (pai 1) → ✓ aceito, pai trocado para 10
+[sprout] main conferida → ✓ 10 commits aceitos na main (arquivos, conteúdo e contagem)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[sprout] resumo: aceitos 10, rejeições 0, tentativas 10, trocas de pai 9, conflitos reais 0, tempo total 93 ms
+[sprout] resumo: aceitos 10, rejeições 0, tentativas 10, trocas de pai 9, conflitos reais 0, tempo total 121 ms
 ```
 
 E, no cenário C, o `409`:
 
 ```
 [sprout] agente 2: changeset (pai 1) → ✗ conflito (conflito.txt)
+[sprout] main conferida → ✓ 1 commit aceito na main (arquivos, conteúdo e contagem)
 ```
 
 Na linha do resumo, só o prefixo sai em cinza.
@@ -511,12 +534,12 @@ rejeições               45         0
 tentativas              55        10
 trocas de pai            -         9
 conflitos reais          0         0
-tempo total        1047 ms     93 ms
+tempo total        1232 ms    121 ms
 
-resultados: git 14/11/2026 12:45, sprout 14/11/2026 12:45
+resultados: git 17/11/2026 22:17, sprout 17/11/2026 22:18
 ```
 
-_(uma execução no omarchy em 14/11/2026; a média de várias execuções é a
+_(uma execução no omarchy em 17/11/2026; a média de várias execuções é a
 #21)_
 
 Num terminal (§8), o placar destaca a comparação. O cabeçalho
@@ -616,11 +639,55 @@ junta um resultado novo com um antigo (por exemplo, um `git-B.json` de ontem
 com um `sprout-B.json` de hoje). Por isso ele mostra a data de cada arquivo, e
 não recusa datas diferentes: o apresentador decide.
 
-### Verificação do estado final (🟡)
+### Verificação do estado final
 
-Depois de cada cenário, o script confere que a `main` contém exatamente os
-arquivos esperados: no git, com `git ls-tree`; no Sprout, com
-`GET /changesets/:id/tree`. Isso prova que nenhum commit se perdeu.
+Só no modo rápido, nos três cenários. Depois de todos os agentes terminarem,
+fora do tempo total, o harness lê a `main` na fonte da verdade:
+
+- no git, no `central.git`: `git ls-tree -r -z main` para os nomes,
+  `git cat-file blob` para o conteúdo de cada arquivo e
+  `git rev-list --count main` para o número de commits;
+- no Sprout, no servidor: `GET /refs/main` para a cabeça e
+  `GET /changesets/:id/tree` para os nomes e o `blobHash` de cada arquivo.
+
+O esperado é, para cada agente aceito, o seu arquivo com o texto `agente N`:
+no A, `agente-1.txt` e `agente-2.txt`; no B, `agente-1.txt` a
+`agente-10.txt`; no C, `conflito.txt` com o texto do agente que venceu. No
+git, soma-se o `README.md` do commit inicial. A conferência pede:
+
+- nenhum arquivo faltando nem sobrando;
+- o conteúdo igual ao esperado (no Sprout, o `blobHash` igual ao hash do
+  conteúdo esperado);
+- o número de commits igual a 1 + aceitos: o commit inicial (ou o changeset
+  raiz) mais um por agente aceito;
+- o número de aceitos certo para o cenário: A 2, B 10, C 1.
+
+No C, o commit do perdedor fica fora da `main` de propósito: é o conflito
+real. Por isso a conferência prova que todo commit aceito está na `main`, e
+não que todos os agentes entraram.
+
+Quando a `main` passa, a execução imprime a linha da conferência antes do
+separador (§5), por exemplo
+`[git] main conferida → ✓ 10 commits aceitos na main (arquivos, conteúdo e contagem)`.
+O número é o de agentes aceitos, igual nos dois sistemas: o `README.md` do
+git é conferido, mas não entra nele. Quando não passa, é erro do harness (§3,
+§4): a linha não sai, o JSON não é gravado, a demo sai com código 1 e o
+stderr diz o que falta, o que sobra, que arquivo tem conteúdo diferente e,
+quando for o caso, a contagem esperada e a obtida. Por exemplo:
+
+```
+demo:git: main check: missing agente-2.txt
+```
+
+O passo a passo (§5) não tem essa conferência: ele confere etapas, não
+arquivos.
+
+**Premissa não verificada.** No Sprout, o número de commits é o id da cabeça:
+o changeset raiz é o 1, e cada changeset aceito recebe o id seguinte. Isso
+depende de uma regra do SQLite (numa `INTEGER PRIMARY KEY` sem
+`AUTOINCREMENT`, o próximo id é o maior + 1), que o repositório não confere.
+Se a regra falhar, a conferência falha com erro do harness; ela não passa em
+silêncio.
 
 ## 7. Medição para o repositório
 
@@ -656,8 +723,9 @@ apaga o JSON de uma execução rápida do C. Os dois saem com:
 - **0:** a execução terminou; no modo rápido, o JSON foi gravado; no passo a
   passo, não há JSON;
 - **1:** erro do harness (§3 no git, §4 no Sprout, §5 na conferência do passo
-  a passo): mensagem no stderr, sem JSON. Com `--passo`, também o stdin
-  fechado durante uma pausa (`stdin closed during a pause (Enter expected)`);
+  a passo, §6 na conferência da `main` do modo rápido): mensagem no stderr,
+  sem JSON. Com `--passo`, também o stdin fechado durante uma pausa
+  (`stdin closed during a pause (Enter expected)`);
 - **2:** cenário ausente ou inválido, ou `--passo` com o cenário B
   (`--passo só existe nos cenários A e C`): mensagem no stderr.
 
