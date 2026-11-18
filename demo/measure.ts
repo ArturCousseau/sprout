@@ -41,6 +41,56 @@ export function formatProgress(
   return `[${index}/${total}] ${system} ${scenario}: ${Math.round(totalMs)} ms`;
 }
 
+/**
+ * The system line (D8): `PRETTY_NAME` of `/etc/os-release` and the kernel;
+ * without the file (null) or without that key, `os.type()` + `os.release()`.
+ */
+export function osName(
+  osRelease: string | null,
+  type: string,
+  release: string,
+): string {
+  const line = osRelease
+    ?.split("\n")
+    .find((entry) => entry.startsWith("PRETTY_NAME="));
+  if (line === undefined) return `${type} ${release}`;
+  const pretty = line.slice("PRETTY_NAME=".length).replace(/^"(.*)"$/, "$1");
+  return `${pretty}, kernel ${release}`;
+}
+
+/** `SQLite 3.53.4 (better-sqlite3 13.0.3)` (D9). */
+export function formatSqlite(sqlite: string, betterSqlite3: string): string {
+  return `SQLite ${sqlite} (better-sqlite3 ${betterSqlite3})`;
+}
+
+/** Total memory in GiB with one decimal and a comma: `18,9 GiB` (D8). */
+export function formatMemory(bytes: number): string {
+  return `${(bytes / 2 ** 30).toFixed(1).replace(".", ",")} GiB`;
+}
+
+/**
+ * The paths of `git status --porcelain=v1 -z --no-renames` stdout: each entry
+ * is `XY <path>` ending in NUL.
+ */
+export function changedPaths(porcelain: string): string[] {
+  if (porcelain !== "" && !porcelain.endsWith("\0")) {
+    throw new RangeError(
+      `git status: output does not end in NUL (got ${JSON.stringify(porcelain)})`,
+    );
+  }
+  const entries = porcelain.split("\0");
+  entries.pop(); // empty: the final NUL was checked above
+  return entries.map((entry) => entry.slice(3));
+}
+
+/** The generated file itself never counts as a change (D9). */
+export const RESULTS_PATH = "docs/resultados.md";
+
+/** Whether the tree has a change other than `docs/resultados.md` (D9). */
+export function isDirty(paths: string[]): boolean {
+  return paths.some((path) => path !== RESULTS_PATH);
+}
+
 /** The time statistics of one scenario and system over the rounds (D6). */
 export interface TimeStats {
   /** Each run's time, in whole milliseconds, in run order. */

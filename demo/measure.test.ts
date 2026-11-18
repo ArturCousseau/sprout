@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  changedPaths,
   formatCount,
+  formatMemory,
   formatProgress,
+  formatSqlite,
+  isDirty,
   measurementPlan,
   median,
+  osName,
   timeStats,
 } from "./measure.js";
 
@@ -78,5 +83,59 @@ describe("formatProgress (D14)", () => {
     expect(formatProgress(7, 30, "git", "B", 1231.6)).toBe(
       "[7/30] git B: 1232 ms",
     );
+  });
+});
+
+describe("osName (D8)", () => {
+  it("uses PRETTY_NAME and the kernel", () => {
+    expect(
+      osName(
+        'NAME="Arch Linux"\nPRETTY_NAME="Omarchy 3.2"\n',
+        "Linux",
+        "7.2.15-1-omarchy",
+      ),
+    ).toBe("Omarchy 3.2, kernel 7.2.15-1-omarchy");
+  });
+
+  it("falls back to os.type() and os.release() without /etc/os-release", () => {
+    expect(osName(null, "Darwin", "25.1.0")).toBe("Darwin 25.1.0");
+  });
+});
+
+describe("formatSqlite (D9)", () => {
+  it("shows the SQLite version and the better-sqlite3 version", () => {
+    expect(formatSqlite("3.53.4", "13.0.3")).toBe(
+      "SQLite 3.53.4 (better-sqlite3 13.0.3)",
+    );
+  });
+});
+
+describe("formatMemory (D8)", () => {
+  it("shows GiB with one decimal and a comma", () => {
+    expect(formatMemory(20268797952)).toBe("18,9 GiB");
+  });
+});
+
+describe("changedPaths (D9)", () => {
+  it("reads the paths of git status --porcelain=v1 -z", () => {
+    expect(changedPaths("M  demo/x.ts\0?? docs/resultados.md\0")).toEqual([
+      "demo/x.ts",
+      "docs/resultados.md",
+    ]);
+    expect(changedPaths("")).toEqual([]);
+  });
+
+  it("refuses an output that does not end in NUL", () => {
+    expect(() => changedPaths("M  demo/x.ts")).toThrow(RangeError);
+  });
+});
+
+describe("isDirty (D9)", () => {
+  it("ignores docs/resultados.md", () => {
+    expect(isDirty(["docs/resultados.md"])).toBe(false);
+  });
+
+  it("is true with another changed file", () => {
+    expect(isDirty(["docs/resultados.md", "demo/x.ts"])).toBe(true);
   });
 });
