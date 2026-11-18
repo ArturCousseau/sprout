@@ -190,14 +190,17 @@ aceito por onda) e pela coleta da D9 na #15 (20 execuções do cenário B, nenhu
 acima de 55). Se ela falhar, o teto dispara e a execução para com erro do
 harness, em vez de contar errado.
 
-**As ondas do cenário B.** No B, esse pior caso aconteceu em todas as execuções
-observadas. A cada onda, todos os agentes que ainda faltam empurram juntos e só
-um é aceito: o k-ésimo aceito faz k tentativas, e a execução chega a
-N(N+1)/2 = 55. As 20 execuções da coleta da #15 deram exatamente 55 tentativas
-cada. Como nenhum agente passa de k, um total de 55 só acontece quando cada um
-faz exatamente k. Mesmo assim, o teste do cenário B confere total ≤ 55, e
-não = 55: o teste só confere invariantes, e nada no git obriga cada onda a
-reunir todos os agentes restantes.
+**As ondas do cenário B.** No pior caso, a cada onda, todos os agentes que
+ainda faltam empurram juntos e só um é aceito: o k-ésimo aceito faz k
+tentativas, e a execução chega a N(N+1)/2 = 55. As 20 execuções da coleta da
+#15 deram exatamente 55 tentativas cada. No terminal da apresentação (zsh, node
+26.13), as 10 execuções de 18/11/2026 (5 do `demo:git` e 5 do `demo:medir`)
+também deram 55. Numa execução de teste do `demo:medir` dentro do Claude Code,
+com node 26.12 e a máquina mais carregada, o git B deu de 51 a 55 tentativas. A
+causa dessa diferença não foi verificada. Como nenhum agente passa de k, um
+total de 55 só acontece quando cada um faz exatamente k. O teste do cenário B
+confere total ≤ 55, e não = 55: o teste só confere invariantes, e nada no git
+obriga cada onda a reunir todos os agentes restantes.
 
 ### A largada não sai junta
 
@@ -539,8 +542,8 @@ tempo total        1232 ms    121 ms
 resultados: git 17/11/2026 22:17, sprout 17/11/2026 22:18
 ```
 
-_(uma execução no omarchy em 17/11/2026; a média de várias execuções é a
-#21)_
+_(uma execução no omarchy em 17/11/2026; a média de várias execuções está em
+[`docs/resultados.md`](resultados.md), §7)_
 
 Num terminal (§8), o placar destaca a comparação. O cabeçalho
 (`git`, `sprout`) sai em negrito. Nas linhas `rejeições`, `tentativas` e
@@ -691,14 +694,95 @@ silêncio.
 
 ## 7. Medição para o repositório
 
-O placar da apresentação é de uma execução. Para o repositório, o script roda
-cada cenário **5 vezes** e grava a média e a variação em `docs/resultados.md`,
-junto com:
+O placar da apresentação é de uma execução. Para o repositório,
+`pnpm demo:medir` (#21) roda os cenários A, B e C nos dois sistemas, no modo
+rápido, **5 vezes** cada (30 execuções), e grava
+[`docs/resultados.md`](resultados.md). O arquivo commitado é o resultado
+oficial.
 
-- a máquina usada (processador, memória, sistema operacional);
-- as versões do Node, do git e do Sprout (tag);
-- a observação de que o repositório central do git roda localmente, sem rede, o
-  que favorece o git em tempo.
+### Como as execuções rodam
+
+- **Um processo só.** O comando (`demo/measure-main.ts`, `demo/measure-cli.ts`
+  e `demo/measure.ts`) chama as mesmas funções dos comandos da demo
+  (`runGitScenario` e `runSproutScenario`), com as linhas dos agentes
+  silenciosas, e usa o resultado que elas devolvem. O servidor do Sprout é um
+  processo filho novo a cada execução, e o trabalho do git é feito por
+  processos `git`; só o código do lado do cliente (os agentes) fica aquecido
+  depois da primeira execução.
+- **Ordem intercalada.** As execuções são sequenciais, nunca duas ao mesmo
+  tempo. Em cada uma das 5 rodadas: A git, A sprout, B git, B sprout, C git,
+  C sprout. Assim, os efeitos da máquina (carga, temperatura) se espalham pelos
+  dois sistemas.
+- **Sem aquecimento.** Nenhuma execução é descartada; as 30 aparecem no
+  documento.
+- **Pastas próprias.** Os repositórios do git, os dados do servidor e os JSON
+  ficam em `demo/tmp/medicao/`. Nada fora dessa pasta muda em `demo/tmp`, e os
+  resultados da última demo continuam lá. Os JSON da medição não são lidos (só
+  sobra o da última rodada).
+
+### O que o `docs/resultados.md` traz
+
+- **Tempo total** de cada execução, o mesmo do placar (§6): os 5 valores, a
+  média, a mediana e a variação, que é o **mínimo–máximo**. Não há desvio
+  padrão: 5 amostras não o sustentam. A média e a mediana são calculadas sobre
+  os valores brutos e arredondadas para ms inteiros só no fim; os 5 valores e o
+  mínimo–máximo aparecem em ms inteiros.
+- **Contagens**, as mesmas métricas do placar: aceitos, rejeições, tentativas,
+  trocas de pai e conflitos reais. Quando as 5 execuções concordam, um valor;
+  senão, o mínimo–máximo e os 5 valores. Trocas de pai no git: `-`, como no
+  placar.
+- **Máquina:** modelo do processador e número de CPUs, memória total, sistema
+  (o `PRETTY_NAME` do `/etc/os-release` e o kernel; sem esse arquivo,
+  `os.type()` e `os.release()`) e a data e a hora do fim da medição. Sem
+  hostname.
+- **Versões:** Node, git e SQLite. O SQLite aparece como
+  `SQLite 3.53.4 (better-sqlite3 13.0.3)`: a versão real, lida com
+  `select sqlite_version()`, e a do pacote, que é outro número.
+- **Versão do Sprout:** o hash curto do commit medido
+  (`git rev-parse --short HEAD`), não uma tag nem a versão do `package.json`:
+  a tag da versão ainda não existe na hora da medição. Se a árvore tiver
+  mudanças não commitadas, fora o próprio `docs/resultados.md`, um aviso sai no
+  arquivo, junto do hash, e no stderr.
+- **Ressalvas**, entre elas a de que o repositório central do git roda na
+  mesma máquina, sem rede, o que favorece o git no tempo.
+
+O Markdown passa pela API do prettier, com a configuração do repositório, antes
+de ser gravado; por isso o arquivo gerado passa no `pnpm format:check` sem
+edição.
+
+### Progresso e falha
+
+O stdout mostra uma linha por execução, sem cor, e no fim onde o arquivo foi
+gravado. A medição que gerou o `docs/resultados.md` commitado (18/11/2026)
+começou assim:
+
+```
+[1/30] git A: 137 ms
+[2/30] sprout A: 30 ms
+[3/30] git B: 1080 ms
+[4/30] sprout B: 88 ms
+[5/30] git C: 112 ms
+[6/30] sprout C: 20 ms
+```
+
+e, depois das rodadas 2 a 5, terminou assim:
+
+```
+[30/30] sprout C: 20 ms
+resultados gravados em docs/resultados.md
+```
+
+O arquivo só é gravado depois das 30 execuções e da formatação. O primeiro erro
+do harness (§3, §4, §6) interrompe a medição, e o `docs/resultados.md` não é
+tocado: nunca há resultado parcial. Os códigos de saída estão no §8.
+
+### Quem gera o número oficial
+
+O `docs/resultados.md` commitado é gerado no terminal da apresentação (zsh do
+omarchy, sem `mise exec`, com `node --version` conferido ali), na branch da
+issue, depois do último commit de código e no mesmo PR. Com o squash merge, o
+hash gravado deixa de existir na `main`; ele continua acessível pela página do
+PR.
 
 Validada com git 2.56.0 e node 26.12.0 no omarchy (Fase 1 da #14).
 
@@ -741,6 +825,30 @@ O `demo:placar` lê esses dois arquivos e não grava nada (§6). Sai com:
   (por exemplo, `rode pnpm demo:git --cenario B`), e nada no stdout;
 - **2:** cenário ausente ou inválido: mensagem no stderr.
 
+A medição do §7:
+
+```
+pnpm demo:medir
+```
+
+Não aceita argumentos, roda as 30 execuções e grava `docs/resultados.md`. Sai
+com:
+
+- **0:** as 30 execuções terminaram e o `docs/resultados.md` foi gravado;
+- **1:** erro do harness numa execução (§3 no git, §4 no Sprout, §6 na
+  conferência da `main`): a medição para ali, sem rodar as execuções seguintes,
+  o stderr traz a mensagem original com a rodada, o sistema e o cenário, no
+  formato `demo:medir: run 3/5, git B: <mensagem original>`, e o
+  `docs/resultados.md` não é tocado. Também sai com 1, sem gravar, um erro do
+  harness ao ler a máquina, as versões ou o estado da árvore depois das 30
+  execuções (`demo:medir: <mensagem>`);
+- **2:** qualquer argumento: uma linha de uso no stderr, nenhuma execução e
+  nenhuma gravação.
+
+Como no `demo:git` e no `demo:sprout`, um erro que não é do harness é bug: é
+relançado, sem código de saída próprio, e o `docs/resultados.md` não é
+gravado.
+
 **Cores.** Os três comandos (`demo:git`, `demo:sprout` e `demo:placar`) só
 usam cores quando o stdout é um terminal e a variável `NO_COLOR` está ausente
 ou vazia, como pede o [no-color.org](https://no-color.org). Com a saída
@@ -771,12 +879,6 @@ Verificado à mão em 17/11/2026, num terminal com `tput cols` = 142:
   `bat`, que não aceita `-v`);
 - uma gravação com o VHS (114 colunas): as cores aparecem, a linha de 111
   cabe e o placar mostra o destaque do §6.
-
-Ainda são proposta, e cada nome será definido na issue indicada:
-
-```
-pnpm demo:medir                       roda tudo 5 vezes e atualiza docs/resultados.md (#21)
-```
 
 ## 9. Roteiro de fala (cerca de 5 minutos)
 

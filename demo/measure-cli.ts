@@ -1,0 +1,178 @@
+import { execFile } from "node:child_process";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { promisify } from "node:util";
+import type { RunGitScenarioOptions } from "./git-agents.js";
+import { HarnessError } from "./harness-error.js";
+import {
+  changedPaths,
+  formatMarkdown,
+  formatProgress,
+  formatResults,
+  isDirty,
+  type Machine,
+  type MeasuredRun,
+  measurementPlan,
+  RESULTS_PATH,
+  ROUNDS,
+  type Versions,
+} from "./measure.js";
+import { summarize } from "./metrics.js";
+import type { RunResult } from "./results.js";
+import { type ExitIo, SCENARIOS } from "./scenarios.js";
+import type { RunSproutScenarioOptions } from "./sprout-agents.js";
+
+/** `process`-like io: ExitIo plus stdout, where the progress goes (D14). */
+export interface MeasureIo extends ExitIo {
+  stdout: { write(text: string): unknown };
+}
+
+/** The measured repository as the user sees it (D9). */
+export interface RepoTree {
+  /** Short hash of HEAD. */
+  commit: string;
+  /** Paths of `git status --porcelain=v1 -z --no-renames`. */
+  changed: string[];
+}
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * `git <args>` in `cwd` with the user's own environment: unlike runGit and
+ * gitOk, no gitEnv, so the measured repository is read as the user sees it,
+ * global `core.excludesFile` included (A1). A failure is a HarnessError with
+ * git's stderr. Returns stdout.
+ */
+async function userGit(args: string[], cwd: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync("git", args, {
+      cwd,
+      env: process.env,
+      encoding: "utf8",
+    });
+    return stdout;
+  } catch (error) {
+    const stderr = (error as { stderr?: unknown }).stderr;
+    throw new HarnessError(
+      `git ${args.join(" ")}: ${typeof stderr === "string" && stderr.trim() !== "" ? stderr.trim() : (error as Error).message}`,
+      { cause: error },
+    );
+  }
+}
+
+/**
+ * The measured repository at `repoRoot` (D9, A1): the short hash of HEAD and
+ * the raw and parsed `git status --porcelain=v1 -z --no-renames`. Not tested:
+ * it runs the real git; step 13 of the plan compares it with the terminal.
+ */
+export async function readRepoTree(
+  repoRoot: string,
+): Promise<RepoTree & { rawStatus: string }> {
+  const commit = (
+    await userGit(["rev-parse", "--short", "HEAD"], repoRoot)
+  ).trim();
+  const rawStatus = await userGit(
+    ["status", "--porcelain=v1", "-z", "--no-renames"],
+    repoRoot,
+  );
+  return { commit, rawStatus, changed: changedPaths(rawStatus) };
+}
+
+/** Everything the measurement reads or runs, injected (D1). */
+export interface MeasureCliOptions {
+  /** Repo root: `demo/tmp/medicao` and `docs/resultados.md` are under it. */
+  repoRoot: string;
+  /** runGitScenario in the demo. */
+  runGit: (options: RunGitScenarioOptions) => Promise<RunResult>;
+  /** runSproutScenario in the demo. */
+  runSprout: (options: RunSproutScenarioOptions) => Promise<RunResult>;
+  readMachine: () => Promise<Machine>;
+  readVersions: () => Promise<Versions>;
+  readTree: () => Promise<RepoTree>;
+  /** The date written in the file. */
+  now: () => Date;
+}
+
+/**
+ * `demo:medir` (#21): runs the 30 runs of measurementPlan, one at a time,
+ * and writes docs/resultados.md. Always ends with `io.exit`. 0: the 30 runs
+ * finished and the file was written. 1: a HarnessError in a run, named on
+ * stderr with its round, system and scenario, or while reading the
+ * environment (tree, machine, versions); the file is not touched. With
+ * uncommitted changes (other than docs/resultados.md), a warning on stderr.
+ * 2: any argument. Any other error is a bug and is rethrown.
+ */
+export async function runMeasureCli(
+  argv: string[],
+  io: MeasureIo,
+  options: MeasureCliOptions,
+): Promise<never> {
+  if (argv.length > 0) {
+    io.stderr.write("usage: pnpm demo:medir (no arguments)\n");
+    return io.exit(2);
+  }
+
+  // Everything the runs touch stays in demo/tmp/medicao (D3).
+  const baseDir = join(options.repoRoot, "demo", "tmp", "medicao");
+  const resultsDir = join(baseDir, "resultados");
+  const dataDir = join(baseDir, "sprout-data");
+  const log = (): void => {}; // the agents' lines stay silent (D1)
+
+  const plan = measurementPlan();
+  const runs: MeasuredRun[] = [];
+  for (const [index, planned] of plan.entries()) {
+    const scenario = SCENARIOS[planned.scenario];
+    let result: RunResult;
+    try {
+      result =
+        planned.system === "git"
+          ? await options.runGit({ scenario, baseDir, resultsDir, log })
+          : await options.runSprout({ scenario, dataDir, resultsDir, log });
+    } catch (error) {
+      if (error instanceof HarnessError) {
+        // The first harness error stops everything; the file is untouched.
+        io.stderr.write(
+          `demo:medir: run ${planned.round}/${ROUNDS}, ${planned.system} ${planned.scenario}: ${error.message}\n`,
+        );
+        return io.exit(1);
+      }
+      throw error; // a bug, not a harness error
+    }
+    const summary = summarize(result.agents);
+    runs.push({ ...planned, summary });
+    io.stdout.write(
+      `${formatProgress(index + 1, plan.length, planned.system, planned.scenario, summary.totalMs)}\n`,
+    );
+  }
+
+  // The three environment readers in one block: a HarnessError from any of
+  // them stops before the file is written, without `run k/5`.
+  const filepath = join(options.repoRoot, RESULTS_PATH);
+  let tree: RepoTree;
+  let md: string;
+  try {
+    tree = await options.readTree();
+    md = formatResults({
+      when: options.now(),
+      commit: tree.commit,
+      dirty: isDirty(tree.changed),
+      machine: await options.readMachine(),
+      versions: await options.readVersions(),
+      runs,
+    });
+  } catch (error) {
+    if (error instanceof HarnessError) {
+      io.stderr.write(`demo:medir: ${error.message}\n`);
+      return io.exit(1);
+    }
+    throw error; // a bug, not a harness error
+  }
+  if (isDirty(tree.changed)) {
+    io.stderr.write(
+      `demo:medir: warning: uncommitted changes; commit ${tree.commit} does not describe all the measured code\n`,
+    );
+  }
+  await writeFile(filepath, await formatMarkdown(md, filepath));
+  io.stdout.write(`resultados gravados em ${RESULTS_PATH}\n`);
+  return io.exit(0);
+}

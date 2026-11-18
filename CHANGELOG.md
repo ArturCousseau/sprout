@@ -101,6 +101,19 @@ para a issue e para o PR de onde veio. O processo de release está no
   verificada dos ids sequenciais do Sprout
   ([#19](https://github.com/ArturCousseau/sprout/issues/19),
   [#48](https://github.com/ArturCousseau/sprout/pull/48)).
+- Medição para o repositório: `pnpm demo:medir` roda os cenários A, B e C nos
+  dois sistemas, no modo rápido, 5 vezes cada (30 execuções, intercaladas por
+  rodada, num processo só e em `demo/tmp/medicao/`), e grava
+  `docs/resultados.md` com os 5 tempos, a média, a mediana e o mínimo–máximo,
+  as contagens do placar, a máquina, as versões do Node, do git e do SQLite e
+  o hash do commit medido, com aviso se a árvore tinha mudanças não
+  commitadas. O Markdown passa pela API do prettier antes de ser gravado. Sai
+  com 0 depois de gravar, 1 no primeiro erro do harness (sem gravar) e 2 com
+  qualquer argumento. O `docs/resultados.md` commitado traz a medição
+  oficial, e o `docs/demo.md` documenta o comando (§7 e §8) e corrige a frase
+  do pior caso do cenário B no git (§3)
+  ([#21](https://github.com/ArturCousseau/sprout/issues/21),
+  [#49](https://github.com/ArturCousseau/sprout/pull/49)).
 
 ### Alterado
 
