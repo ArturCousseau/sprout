@@ -73,7 +73,8 @@ export function formatMemory(bytes: number): string {
 
 /**
  * The paths of `git status --porcelain=v1 -z --no-renames` stdout: each entry
- * is `XY <path>` ending in NUL.
+ * is `XY <path>` ending in NUL. Empty output gives `[]`; a non-empty output
+ * that does not end in NUL throws `RangeError`.
  */
 export function changedPaths(porcelain: string): string[] {
   if (porcelain !== "" && !porcelain.endsWith("\0")) {
