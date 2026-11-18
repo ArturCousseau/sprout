@@ -36,3 +36,20 @@ export function timeStats(totalsMs: number[]): TimeStats {
     max: Math.round(Math.max(...totalsMs)),
   };
 }
+
+/**
+ * One count of one scenario and system over the rounds (D7): equal in every
+ * run → that value; different → `min–max (v1, v2, …)`; every value null (git
+ * reparents) → "-". A list mixing null and numbers is a RangeError.
+ */
+export function formatCount(values: (number | null)[]): string {
+  const numbers = values.filter((value): value is number => value !== null);
+  if (numbers.length > 0 && numbers.length < values.length) {
+    throw new RangeError("a count must be null in every run or in none");
+  }
+  if (numbers.length === 0) return "-";
+  const min = Math.min(...numbers);
+  const max = Math.max(...numbers);
+  if (min === max) return String(min);
+  return `${min}–${max} (${numbers.join(", ")})`;
+}

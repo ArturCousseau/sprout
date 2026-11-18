@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { median, timeStats } from "./measure.js";
+import { formatCount, median, timeStats } from "./measure.js";
 
 describe("median", () => {
   it("is the middle value of an odd count", () => {
@@ -25,5 +25,25 @@ describe("timeStats (D6)", () => {
 
   it("refuses an empty list", () => {
     expect(() => timeStats([])).toThrow(RangeError);
+  });
+});
+
+describe("formatCount (D7)", () => {
+  it("shows one value when the 5 runs agree", () => {
+    expect(formatCount([10, 10, 10, 10, 10])).toBe("10");
+  });
+
+  it("shows min–max and the 5 values when the runs differ", () => {
+    expect(formatCount([45, 44, 45, 45, 43])).toBe(
+      "43–45 (45, 44, 45, 45, 43)",
+    );
+  });
+
+  it("shows - when every value is null (git reparents)", () => {
+    expect(formatCount([null, null, null, null, null])).toBe("-");
+  });
+
+  it("refuses a list mixing null and numbers", () => {
+    expect(() => formatCount([null, 1, 1, 1, 1])).toThrow(RangeError);
   });
 });
