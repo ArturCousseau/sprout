@@ -786,6 +786,56 @@ PR.
 
 Validada com git 2.56.0 e node 26.12.0 no omarchy (Fase 1 da #14).
 
+### A curva N × tentativas
+
+`pnpm demo:curva` (#50) roda o cenário B com N = 2, 5, 10 e 20 agentes, cada
+um no seu próprio arquivo, nos dois sistemas, no modo rápido, **3 vezes** cada
+(24 execuções), e grava [`docs/curva.md`](curva.md). Para cada N, o arquivo
+traz o teto do git, as tentativas nos dois sistemas e o tempo total (média e
+mínimo–máximo).
+
+- **Como a medição.** Um processo só, execuções sequenciais, sem aquecimento,
+  Markdown pela API do prettier e aviso de árvore suja, fora o próprio
+  `docs/curva.md`, como no `demo:medir`.
+- **Ordem intercalada.** Em cada uma das 3 rodadas, N crescente e, para cada
+  N, git e depois Sprout: git 2, sprout 2, git 5, sprout 5, git 10, sprout 10,
+  git 20, sprout 20.
+- **Pastas próprias.** Os repositórios do git, os dados do servidor e os JSON
+  ficam em `demo/tmp/curva/`. Nada fora dessa pasta muda em `demo/tmp`: nem a
+  última demo, nem a `demo/tmp/medicao/`.
+- **O teto é o pior caso.** O teto N(N+1)/2 (§3) é o pior caso legítimo do git,
+  não o valor esperado: uma execução pode ficar abaixo dele.
+- **Tentativas estruturais no Sprout.** Cada agente faz um único pedido, sem
+  nova tentativa; o valor é sempre N.
+
+A curva que gerou o `docs/curva.md` commitado (18/11/2026) começou assim:
+
+```
+[1/24] git N=2: 137 ms
+[2/24] sprout N=2: 29 ms
+[3/24] git N=5: 432 ms
+[4/24] sprout N=5: 49 ms
+[5/24] git N=10: 1014 ms
+[6/24] sprout N=10: 107 ms
+[7/24] git N=20: 3145 ms
+[8/24] sprout N=20: 182 ms
+```
+
+e, depois das rodadas 2 e 3, terminou assim:
+
+```
+[24/24] sprout N=20: 180 ms
+curva gravada em docs/curva.md
+```
+
+O arquivo só é gravado depois das 24 execuções; o primeiro erro do harness
+interrompe a curva, e o `docs/curva.md` não é tocado. Os códigos de saída estão
+no §8.
+
+O `docs/curva.md` commitado é gerado como o `docs/resultados.md`: no terminal
+da apresentação (zsh do omarchy), na branch da issue, depois do último commit
+de código e no mesmo PR. A curva commitada rodou com node 26.13.0.
+
 ## 8. Comandos
 
 Definidos:
@@ -848,6 +898,30 @@ com:
 Como no `demo:git` e no `demo:sprout`, um erro que não é do harness é bug: é
 relançado, sem código de saída próprio, e o `docs/resultados.md` não é
 gravado.
+
+A curva do §7:
+
+```
+pnpm demo:curva
+```
+
+Não aceita argumentos, roda as 24 execuções e grava `docs/curva.md`. Sai com:
+
+- **0:** as 24 execuções terminaram e o `docs/curva.md` foi gravado. Com
+  mudanças não commitadas, fora o próprio `docs/curva.md`, um aviso sai no
+  stderr e no arquivo, e o código continua 0;
+- **1:** erro do harness numa execução (§3 no git, §4 no Sprout, §6 na
+  conferência da `main`): a curva para ali, sem rodar as execuções seguintes,
+  o stderr traz a mensagem original com a rodada, o sistema e o N, no formato
+  `demo:curva: run 2/3, git N=20: <mensagem original>`, e o `docs/curva.md`
+  não é tocado. Também sai com 1, sem gravar, um erro do harness ao ler a
+  máquina, as versões ou o estado da árvore depois das 24 execuções
+  (`demo:curva: <mensagem>`);
+- **2:** qualquer argumento: a linha `usage: pnpm demo:curva (no arguments)`
+  no stderr, nenhuma execução e nenhuma gravação.
+
+Como no `demo:medir`, um erro que não é do harness é bug: é relançado, sem
+código de saída próprio, e o `docs/curva.md` não é gravado.
 
 **Cores.** Os três comandos (`demo:git`, `demo:sprout` e `demo:placar`) só
 usam cores quando o stdout é um terminal e a variável `NO_COLOR` está ausente

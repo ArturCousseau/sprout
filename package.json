@@ -19,7 +19,8 @@
     "demo:git": "tsx demo/git-main.ts",
     "demo:sprout": "tsx demo/sprout-main.ts",
     "demo:placar": "tsx demo/scoreboard-main.ts",
-    "demo:medir": "tsx demo/measure-main.ts"
+    "demo:medir": "tsx demo/measure-main.ts",
+    "demo:curva": "tsx demo/curve-main.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -90,9 +90,12 @@ export function changedPaths(porcelain: string): string[] {
 /** The generated file itself never counts as a change (D9). */
 export const RESULTS_PATH = "docs/resultados.md";
 
-/** Whether the tree has a change other than `docs/resultados.md` (D9). */
-export function isDirty(paths: string[]): boolean {
-  return paths.some((path) => path !== RESULTS_PATH);
+/**
+ * Whether the tree has a change other than `ignored` (D9): the generated file
+ * itself, `docs/resultados.md` by default, `docs/curva.md` in the curve (#50).
+ */
+export function isDirty(paths: string[], ignored = RESULTS_PATH): boolean {
+  return paths.some((path) => path !== ignored);
 }
 
 /** The time statistics of one scenario and system over the rounds (D6). */

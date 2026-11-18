@@ -114,6 +114,19 @@ para a issue e para o PR de onde veio. O processo de release está no
   do pior caso do cenário B no git (§3)
   ([#21](https://github.com/ArturCousseau/sprout/issues/21),
   [#49](https://github.com/ArturCousseau/sprout/pull/49)).
+- Curva N × tentativas: `pnpm demo:curva` roda o cenário B com N = 2, 5, 10 e
+  20 agentes, cada um no seu próprio arquivo, nos dois sistemas, no modo
+  rápido, 3 vezes cada (24 execuções, intercaladas por rodada, num processo só
+  e em `demo/tmp/curva/`), e grava `docs/curva.md` com o teto N(N+1)/2 do git,
+  as tentativas nos dois sistemas e a média e o mínimo–máximo do tempo, além
+  da máquina, das versões e do commit medido. Sai com 0 depois de gravar, 1 no
+  primeiro erro do harness (sem gravar) e 2 com qualquer argumento. Os
+  leitores de máquina e de versões passam para `demo/environment.ts`, e o
+  `isDirty` recebe o caminho ignorado, sem mudar o `demo:medir`. O
+  `docs/curva.md` commitado traz a curva oficial, e o `docs/demo.md` documenta
+  o comando (§7 e §8)
+  ([#50](https://github.com/ArturCousseau/sprout/issues/50),
+  [#51](https://github.com/ArturCousseau/sprout/pull/51)).
 
 ### Alterado
 
