@@ -1,5 +1,7 @@
+import type { RunSummary } from "./metrics.js";
 import type { System } from "./results.js";
 import type { ScenarioId } from "./scenarios.js";
+import { formatTimestamp, LABELS } from "./scoreboard.js";
 
 /** One run of the measurement: which round, system and scenario. */
 export interface PlannedRun {
@@ -145,4 +147,151 @@ export function formatCount(values: (number | null)[]): string {
   const max = Math.max(...numbers);
   if (min === max) return String(min);
   return `${min}–${max} (${numbers.join(", ")})`;
+}
+
+/** One finished run of the measurement and its summary. */
+export interface MeasuredRun extends PlannedRun {
+  summary: RunSummary;
+}
+
+/** The measured machine (D8); no hostname. */
+export interface Machine {
+  cpuModel: string;
+  cpuCount: number;
+  memoryBytes: number;
+  /** Already built by osName. */
+  system: string;
+}
+
+/** The versions (D9), each already as shown. */
+export interface Versions {
+  /** `process.version`, e.g. `v26.12.0`. */
+  node: string;
+  /** `git --version` without the newline, e.g. `git version 2.56.0`. */
+  git: string;
+  /** Built by formatSqlite. */
+  sqlite: string;
+}
+
+/** Everything docs/resultados.md is built from. */
+export interface ResultsInput {
+  /** When the measurement ended (local time). */
+  when: Date;
+  /** Short hash of HEAD. */
+  commit: string;
+  /** The tree had changes other than docs/resultados.md (isDirty). */
+  dirty: boolean;
+  machine: Machine;
+  versions: Versions;
+  /** The 30 runs, in any order. */
+  runs: MeasuredRun[];
+}
+
+/**
+ * docs/resultados.md before prettier: header with date and commit (and the
+ * warning), machine and versions, time table, count table and caveats.
+ */
+export function formatResults(input: ResultsInput): string {
+  const { when, commit, dirty, machine, versions } = input;
+  const groups = groupRuns(input.runs);
+
+  const timeRows = groups.map(({ scenario, system, summaries }) => {
+    const stats = timeStats(summaries.map((summary) => summary.totalMs));
+    return `| ${scenario} | ${system} | ${stats.values.join(", ")} | ${stats.mean} | ${stats.median} | ${stats.min}–${stats.max} |`;
+  });
+
+  const countRows = groups.map(({ scenario, system, summaries }) => {
+    const cells = [
+      formatCount(summaries.map((summary) => summary.accepted)),
+      formatCount(summaries.map((summary) => summary.rejections)),
+      formatCount(summaries.map((summary) => summary.attempts)),
+      formatCount(summaries.map((summary) => summary.reparents)),
+      formatCount(summaries.map((summary) => summary.conflicts)),
+    ];
+    return `| ${scenario} | ${system} | ${cells.join(" | ")} |`;
+  });
+
+  const countLabels = LABELS.filter((label) => label !== "tempo total");
+
+  const lines = [
+    "# Resultados da medição",
+    "",
+    "<!-- Gerado por `pnpm demo:medir`; não edite à mão. Para refazer, rode `pnpm demo:medir`. -->",
+    "",
+    `Medido em ${formatTimestamp(when)}.`,
+    "",
+    `Commit medido: \`${commit}\`.`,
+    ...(dirty
+      ? [
+          "",
+          `> Aviso: a árvore tinha mudanças não commitadas; o commit \`${commit}\` não descreve todo o código medido.`,
+        ]
+      : []),
+    "",
+    "## Máquina e versões",
+    "",
+    `- Processador: ${machine.cpuModel} (${machine.cpuCount} CPUs)`,
+    `- Memória: ${formatMemory(machine.memoryBytes)}`,
+    `- Sistema: ${machine.system}`,
+    `- Node: ${versions.node}`,
+    `- Git: ${versions.git}`,
+    `- ${versions.sqlite}`,
+    "",
+    "## Tempo total",
+    "",
+    `Cada cenário rodou ${ROUNDS} vezes em cada sistema, no modo rápido, em rodadas intercaladas. O tempo de cada execução, em ms, vai da liberação da barreira até o último agente terminar.`,
+    "",
+    "Média e mediana são calculadas sobre os valores brutos e arredondadas para ms inteiros só no fim; os valores de cada execução e o mínimo–máximo aparecem arredondados um a um.",
+    "",
+    "| Cenário | Sistema | Execuções (ms) | Média | Mediana | Mínimo–máximo |",
+    "| --- | --- | --- | ---: | ---: | --- |",
+    ...timeRows,
+    "",
+    "## Contagens",
+    "",
+    `Um valor quando as ${ROUNDS} execuções concordam; senão, o mínimo–máximo e os ${ROUNDS} valores, na ordem das rodadas.`,
+    "",
+    `| Cenário | Sistema | ${countLabels.join(" | ")} |`,
+    `| --- | --- |${" ---: |".repeat(countLabels.length)}`,
+    ...countRows,
+    "",
+    "## Ressalvas",
+    "",
+    ...CAVEATS.map((caveat) => `- ${caveat}`),
+    "",
+  ];
+  return lines.join("\n");
+}
+
+/** The caveats of issue #21, one per bullet. */
+const CAVEATS = [
+  "O repositório central do git roda na mesma máquina, sem rede, o que favorece o git no tempo.",
+  "Uma máquina só; os números não valem para outra máquina.",
+  "As 30 execuções rodam num processo só. O servidor do Sprout é um processo filho novo a cada execução e o trabalho do git é feito por processos `git`; só o código do lado do cliente (os agentes) fica aquecido depois da primeira execução. Nenhuma execução foi descartada.",
+  "O tempo total vai da liberação da barreira até o último agente terminar. No git, inclui o lançamento dos processos `git push`, que se espalha por cerca de 30 ms (`docs/demo.md` §3); no Sprout, o pedido HTTP local até o corpo da resposta lido.",
+  "A preparação, o título e a conferência da `main` ficam fora do tempo medido.",
+  "Com 5 amostras, a variação é dada pelo mínimo–máximo, sem desvio padrão; média e mediana são arredondadas só no fim.",
+  "Os agentes são rotinas com roteiro fixo, não modelos de IA.",
+];
+
+/** The runs of one scenario and system, by round. */
+interface RunGroup {
+  scenario: ScenarioId;
+  system: System;
+  summaries: RunSummary[];
+}
+
+/** The runs grouped in table order (A git, A sprout, …), each by round. */
+function groupRuns(runs: MeasuredRun[]): RunGroup[] {
+  const groups: RunGroup[] = [];
+  for (const scenario of ["A", "B", "C"] as const) {
+    for (const system of ["git", "sprout"] as const) {
+      const summaries = runs
+        .filter((run) => run.scenario === scenario && run.system === system)
+        .sort((a, b) => a.round - b.round)
+        .map((run) => run.summary);
+      groups.push({ scenario, system, summaries });
+    }
+  }
+  return groups;
 }
