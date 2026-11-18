@@ -169,6 +169,40 @@ describe("criterion 1: demo:sprout exit codes", () => {
     },
     SPROUT_TIMEOUT,
   );
+
+  it(
+    "SC1 main check divergence → stderr and exit 1, no JSON (#19)",
+    async () => {
+      const { io, written, codes } = fakeIo();
+      // Written by hand: the tree of head 3 without agente-2.txt. H1 is
+      // `printf 'agente 1\n' | sha256sum`.
+      const H1 =
+        "ebf0a5cfd5f69be2c45927bf26823df03672b0aab59e77ffedaf4fec371c7161";
+      const missingFile: SproutFetch = (url, init) =>
+        new URL(url).pathname === "/changesets/3/tree"
+          ? Promise.resolve(
+              new Response(
+                `{"id":3,"entries":[{"path":"agente-1.txt","blobHash":"${H1}"}]}`,
+                { status: 200 },
+              ),
+            )
+          : fetch(url, init);
+
+      const running = runSproutCli(
+        ["--cenario", "A"],
+        io,
+        options({ fetch: missingFile }),
+      );
+
+      await expect(running).rejects.toThrow(ExitCalled);
+      expect(codes).toEqual([1]);
+      expect(written).toEqual([
+        "demo:sprout: main check: missing agente-2.txt\n",
+      ]);
+      expect(existsSync(join(base, "resultados", "sprout-A.json"))).toBe(false);
+    },
+    SPROUT_TIMEOUT,
+  );
 });
 
 describe("demo:sprout --passo (#17)", () => {

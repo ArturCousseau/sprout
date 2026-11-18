@@ -126,26 +126,34 @@ describe("criterion 2: data dir", () => {
 });
 
 describe("criterion 5: agent cycle", () => {
+  // Written by hand: the head after the run (A: root + 2 accepted = 3; C:
+  // root + 1 accepted = 2), whose tree the main check reads (#19).
   it.each([
-    ["A", "agente-1.txt", "agente-2.txt"],
-    ["C", "conflito.txt", "conflito.txt"],
+    ["A", "agente-1.txt", "agente-2.txt", 3],
+    ["C", "conflito.txt", "conflito.txt", 2],
   ] as const)(
     "scenario %s: request sequence",
-    async (id, path1, path2) => {
+    async (id, path1, path2, head) => {
       const requests: Recorded[] = [];
 
       await runSproutScenario(
         options(SCENARIOS[id], { fetch: recording(requests) }),
       );
 
+      // 4 of preparation, 2 POSTs and 2 of the main check (#19).
+      expect(requests).toHaveLength(8);
       expect(requests.slice(0, 4)).toEqual([
         { method: "GET", path: "/refs/main", body: null },
         { method: "PUT", path: `/blobs/${H1}`, body: "agente 1\n" },
         { method: "GET", path: "/refs/main", body: null },
         { method: "PUT", path: `/blobs/${H2}`, body: "agente 2\n" },
       ]);
+      expect(requests.slice(6)).toEqual([
+        { method: "GET", path: "/refs/main", body: null },
+        { method: "GET", path: `/changesets/${head}/tree`, body: null },
+      ]);
       // Exactly 2 POSTs, also in C where one gets a 409: no retry.
-      const posts = requests.slice(4);
+      const posts = requests.slice(4, 6);
       expect(posts.map((r) => `${r.method} ${r.path}`)).toEqual([
         "POST /changesets",
         "POST /changesets",
@@ -555,13 +563,17 @@ describe("fast-mode title and separator (#20, D4, P3)", () => {
         "[sprout] agente 2: changeset (pai 1) → ✓ aceito, pai trocado para 2",
       ];
       expect(events[0]).toBe(TITLE_A);
+      expect(events.at(-3)).toBe(
+        "[sprout] main conferida → ✓ 2 commits aceitos na main (arquivos, conteúdo e contagem)",
+      );
       expect(events.at(-2)).toBe(SEPARATOR_A);
-      const middle = events.slice(1, -2);
+      const middle = events.slice(1, -3);
       expect(middle.filter((line) => !possible.includes(line))).toEqual([]);
       // Written by hand: the counts of scenario A are fixed (R11 of #18: 2
-      // accepted, 1 reparent); only the order varies. Title, 2 events,
-      // separator and summary: 5 lines, and exactly one parent change.
-      expect(events).toHaveLength(5);
+      // accepted, 1 reparent); only the order varies. Title, 2 events, main
+      // check (#19), separator and summary: 6 lines, and exactly one parent
+      // change.
+      expect(events).toHaveLength(6);
       expect(
         middle.filter((line) => line.endsWith(", pai trocado para 2")).length,
       ).toBe(1);
@@ -589,11 +601,14 @@ describe("fast-mode title and separator (#20, D4, P3)", () => {
       expect(events[0]).toBe(
         "\x1b[2m━━\x1b[22m \x1b[1msprout · cenário A · modo rápido\x1b[22m \x1b[2m━━\x1b[22m",
       );
+      expect(events.at(-3)).toBe(
+        "\x1b[2m[sprout]\x1b[22m main conferida \x1b[2m→\x1b[22m \x1b[32m✓ 2 commits aceitos\x1b[39m na main (arquivos, conteúdo e contagem)",
+      );
       expect(events.at(-2)).toBe(`\x1b[2m${SEPARATOR_A}\x1b[22m`);
-      expect(events).toHaveLength(5);
+      expect(events).toHaveLength(6);
       expect(
         events
-          .slice(1, -2)
+          .slice(1, -3)
           .map(stripAnsi)
           .filter((line) => !possible.includes(line)),
       ).toEqual([]);
@@ -616,6 +631,231 @@ describe("fast-mode title and separator (#20, D4, P3)", () => {
       await expect(running).rejects.toThrow(HarnessError);
       expect(events).toContain(TITLE_A);
       expect(events).not.toContain(SEPARATOR_A);
+    },
+    SPROUT_TIMEOUT,
+  );
+});
+
+/** Matches exactly `message`, not a part of it. */
+function exactly(message: string): RegExp {
+  return new RegExp(`^${message.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
+}
+
+/** One fake answer: the `nth` request with this method and path gets it. */
+interface Fake {
+  method: string;
+  path: string;
+  nth: number;
+  status: number;
+  body: string;
+}
+
+/**
+ * Real fetch, except the requests named in `fakes`, counted per method and
+ * path (#19). Unlike `answering`, the agents' own GET /refs/main still reach
+ * the server: only the check's request is replaced.
+ */
+function withFakes(fakes: Fake[]): SproutFetch {
+  const seen = new Map<string, number>();
+  return (url, init) => {
+    const key = `${init.method} ${new URL(url).pathname}`;
+    const count = (seen.get(key) ?? 0) + 1;
+    seen.set(key, count);
+    const fake = fakes.find(
+      (f) => `${f.method} ${f.path}` === key && f.nth === count,
+    );
+    return fake === undefined
+      ? fetch(url, init)
+      : Promise.resolve(new Response(fake.body, { status: fake.status }));
+  };
+}
+
+// Written by hand: a blob hash for the intruder (its value does not matter).
+const HI = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+describe("main check at the end of a fast run (#19)", () => {
+  // Written by hand. A good scenario A ends at head 3 with agente-1.txt → H1
+  // and agente-2.txt → H2. The 3rd GET /refs/main is the check's (the first
+  // two are the agents' preparation).
+  it.each([
+    [
+      "missing",
+      [
+        {
+          method: "GET",
+          path: "/changesets/3/tree",
+          nth: 1,
+          status: 200,
+          body: `{"id":3,"entries":[{"path":"agente-1.txt","blobHash":"${H1}"}]}`,
+        },
+      ],
+      "main check: missing agente-2.txt",
+    ],
+    [
+      "extra",
+      [
+        {
+          method: "GET",
+          path: "/changesets/3/tree",
+          nth: 1,
+          status: 200,
+          body: `{"id":3,"entries":[{"path":"agente-1.txt","blobHash":"${H1}"},{"path":"agente-2.txt","blobHash":"${H2}"},{"path":"intruso.txt","blobHash":"${HI}"}]}`,
+        },
+      ],
+      "main check: extra intruso.txt",
+    ],
+    [
+      "content",
+      [
+        {
+          method: "GET",
+          path: "/changesets/3/tree",
+          nth: 1,
+          status: 200,
+          body: `{"id":3,"entries":[{"path":"agente-1.txt","blobHash":"${H1}"},{"path":"agente-2.txt","blobHash":"${H1}"}]}`,
+        },
+      ],
+      "main check: content differs: agente-2.txt",
+    ],
+    [
+      "commits",
+      [
+        {
+          method: "GET",
+          path: "/refs/main",
+          nth: 3,
+          status: 200,
+          body: '{"id":2}',
+        },
+        {
+          method: "GET",
+          path: "/changesets/2/tree",
+          nth: 1,
+          status: 200,
+          body: `{"id":2,"entries":[{"path":"agente-1.txt","blobHash":"${H1}"},{"path":"agente-2.txt","blobHash":"${H2}"}]}`,
+        },
+      ],
+      "main check: commits: expected 3, got 2",
+    ],
+  ])(
+    "SX1 scenario A, %s → HarnessError, no JSON, server stopped",
+    async (_label, fakes, message) => {
+      const running = runSproutScenario(
+        options(SCENARIOS.A, { fetch: withFakes(fakes) }),
+      );
+
+      await expect(running).rejects.toThrow(HarnessError);
+      await expect(running).rejects.toThrow(exactly(message));
+      expect(existsSync(join(base, "resultados", "sprout-A.json"))).toBe(false);
+      expect(await settledValue(onlyServer().exited)).toEqual(
+        STOPPED_BY_SIGTERM,
+      );
+    },
+    SPROUT_TIMEOUT,
+  );
+
+  it.each([
+    [
+      "status 404",
+      {
+        method: "GET",
+        path: "/changesets/3/tree",
+        nth: 1,
+        status: 404,
+        body: '{"statusCode":404,"error":"Not Found","message":"changeset not found: 3"}',
+      },
+      "sprout: unexpected status 404 for getTree (expected 200)",
+    ],
+    [
+      "body with id 2",
+      {
+        method: "GET",
+        path: "/changesets/3/tree",
+        nth: 1,
+        status: 200,
+        body: `{"id":2,"entries":[{"path":"agente-1.txt","blobHash":"${H1}"},{"path":"agente-2.txt","blobHash":"${H2}"}]}`,
+      },
+      `sprout: getTree body: id must be 3 (got {"id":2,"entries":[{"path":"agente-1.txt","blobHash":"${H1}"},{"path":"agente-2.txt","blobHash":"${H2}"}]})`,
+    ],
+  ])(
+    "SX2 scenario A, getTree %s → HarnessError, server stopped",
+    async (_label, fake, message) => {
+      const running = runSproutScenario(
+        options(SCENARIOS.A, { fetch: withFakes([fake]) }),
+      );
+
+      await expect(running).rejects.toThrow(HarnessError);
+      await expect(running).rejects.toThrow(exactly(message));
+      expect(await settledValue(onlyServer().exited)).toEqual(
+        STOPPED_BY_SIGTERM,
+      );
+    },
+    SPROUT_TIMEOUT,
+  );
+
+  it(
+    "SX3 scenario C with agent 2 winning: the check expects agent 2's content",
+    async () => {
+      const events: string[] = [];
+      const log = (line: string): void => {
+        events.push(line);
+      };
+      // Agent 1's POST gets a 409 written by hand and never reaches the
+      // server, so agent 2's changeset is the only one: it wins.
+      const agent2Wins: SproutFetch = (url, init) =>
+        init.method === "POST" &&
+        typeof init.body === "string" &&
+        init.body.includes('"author":"agente-1"')
+          ? Promise.resolve(
+              new Response(
+                '{"statusCode":409,"error":"Conflict","message":"paths changed since parent","conflicts":["conflito.txt"]}',
+                { status: 409 },
+              ),
+            )
+          : fetch(url, init);
+
+      const result = await runSproutScenario(
+        options(SCENARIOS.C, { fetch: agent2Wins, log }),
+      );
+
+      expect(result.agents.map((a) => [a.agent, a.outcome])).toEqual([
+        [1, "conflict"],
+        [2, "accepted"],
+      ]);
+      expect(events.at(-3)).toBe(
+        "[sprout] main conferida → ✓ 1 commit aceito na main (arquivos, conteúdo e contagem)",
+      );
+      expect(existsSync(join(base, "resultados", "sprout-C.json"))).toBe(true);
+    },
+    SPROUT_TIMEOUT,
+  );
+
+  // Written by hand. The separator of B and C is SEPARATOR_A: the titles
+  // differ only in the scenario letter, so they are as wide.
+  it.each([
+    [
+      "B",
+      "[sprout] main conferida → ✓ 10 commits aceitos na main (arquivos, conteúdo e contagem)",
+    ],
+    [
+      "C",
+      "[sprout] main conferida → ✓ 1 commit aceito na main (arquivos, conteúdo e contagem)",
+    ],
+  ] as const)(
+    "SX4 scenario %s: the main check line right before the separator",
+    async (id, line) => {
+      const events: string[] = [];
+      const log = (event: string): void => {
+        events.push(event);
+      };
+
+      await runSproutScenario(options(SCENARIOS[id], { log }));
+
+      expect(events.at(-3)).toBe(line);
+      expect(events.at(-2)).toBe(SEPARATOR_A);
+      expect(
+        events.filter((event) => event.includes("main conferida")),
+      ).toHaveLength(1);
     },
     SPROUT_TIMEOUT,
   );

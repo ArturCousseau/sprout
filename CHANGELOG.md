@@ -87,6 +87,20 @@ para a issue e para o PR de onde veio. O processo de release está no
   cores, o `NO_COLOR` e a verificação manual
   ([#20](https://github.com/ArturCousseau/sprout/issues/20),
   [#46](https://github.com/ArturCousseau/sprout/pull/46)).
+- Conferência da `main` no fim de cada execução do modo rápido, nos três
+  cenários e nos dois sistemas: os nomes dos arquivos, o conteúdo de cada um
+  e a contagem de commits (1 + aceitos), além do número de aceitos do
+  cenário. No git, a `main` é lida do `central.git` (`git ls-tree -r -z`,
+  `git cat-file blob` e `git rev-list --count`); no Sprout, de
+  `GET /refs/main` e `GET /changesets/:id/tree`, com o conteúdo conferido
+  pelo `blobHash` e a contagem pelo id da cabeça. Quando passa, sai a linha
+  `main conferida → ✓ N commits aceitos na main (arquivos, conteúdo e contagem)`
+  antes do separador; uma divergência é erro do harness (código 1, sem JSON,
+  com o que falta, sobra ou difere no stderr). O passo a passo não muda. O
+  `docs/demo.md` documenta a conferência, a linha, os erros e a premissa não
+  verificada dos ids sequenciais do Sprout
+  ([#19](https://github.com/ArturCousseau/sprout/issues/19),
+  [#48](https://github.com/ArturCousseau/sprout/pull/48)).
 
 ### Alterado
 
