@@ -324,6 +324,48 @@ describe("demo:curva failure (D8, D11)", () => {
       lines.filter((line) => line.startsWith("curva gravada")),
     ).toHaveLength(0);
   });
+
+  it("exits 1 on a HarnessError while reading the machine (L9b)", async () => {
+    const { io, out, err, codes } = fakeIo();
+    const runners = fakeRunners();
+    const options: CurveCliOptions = {
+      ...cliOptions(runners),
+      readMachine: () => Promise.reject(new HarnessError("m")),
+    };
+
+    await expect(runCurveCli([], io, options)).rejects.toThrow(ExitCalled);
+
+    expect(codes).toEqual([1]);
+    expect(err).toEqual(["demo:curva: m\n"]);
+    expect(await readFile(curveFile, "utf8")).toBe("antigo\n");
+    const lines = out.join("").split("\n");
+    expect(lines.pop()).toBe(""); // the output ends in "\n"
+    expect(lines).toHaveLength(24);
+    expect(
+      lines.filter((line) => line.startsWith("curva gravada")),
+    ).toHaveLength(0);
+  });
+
+  it("exits 1 on a HarnessError while reading the versions (L9c)", async () => {
+    const { io, out, err, codes } = fakeIo();
+    const runners = fakeRunners();
+    const options: CurveCliOptions = {
+      ...cliOptions(runners),
+      readVersions: () => Promise.reject(new HarnessError("v")),
+    };
+
+    await expect(runCurveCli([], io, options)).rejects.toThrow(ExitCalled);
+
+    expect(codes).toEqual([1]);
+    expect(err).toEqual(["demo:curva: v\n"]);
+    expect(await readFile(curveFile, "utf8")).toBe("antigo\n");
+    const lines = out.join("").split("\n");
+    expect(lines.pop()).toBe(""); // the output ends in "\n"
+    expect(lines).toHaveLength(24);
+    expect(
+      lines.filter((line) => line.startsWith("curva gravada")),
+    ).toHaveLength(0);
+  });
 });
 
 /** How many lines of `text` start with `prefix`. */

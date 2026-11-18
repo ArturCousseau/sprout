@@ -69,9 +69,10 @@ describe("formatCurveProgress (D11)", () => {
 });
 
 // Attempts and total times of each system and N, by round, written by hand.
-// git N=20 uses the 3 runs of phase 1 (fase1.md): 177, 183, 176 attempts and
-// 2865, 2717, 2714 ms → mean 8296 / 3 = 2765.3 → 2765. Sprout N=20: 190, 201,
-// 185 ms → mean 576 / 3 = 192.
+// git N=20 uses the 3 runs of phase 1 of issue #50
+// (https://github.com/ArturCousseau/sprout/issues/50#issuecomment-6991274660):
+// 177, 183, 176 attempts and 2865, 2717, 2714 ms → mean 8296 / 3 = 2765.3 →
+// 2765. Sprout N=20: 190, 201, 185 ms → mean 576 / 3 = 192.
 interface Base {
   attempts: number[];
   times: number[];
