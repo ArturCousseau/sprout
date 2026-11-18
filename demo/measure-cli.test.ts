@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { RunGitScenarioOptions } from "./git-agents.js";
+import { HarnessError } from "./harness-error.js";
 import {
   type MeasureCliOptions,
   type MeasureIo,
@@ -220,5 +221,35 @@ describe("demo:medir runs (D4, D14, D3)", () => {
     );
     expect(gitInside).toHaveLength(15);
     expect(sproutInside).toHaveLength(15);
+  });
+});
+
+describe("demo:medir failure (D2, D11)", () => {
+  it("exits 1 on a HarnessError in run 3, git B, without touching the file (C5)", async () => {
+    const { io, err, codes } = fakeIo();
+    // Call 15 is round 3, git B (D4).
+    const runners = fakeRunners((n) =>
+      n === 15 ? new HarnessError("boom") : undefined,
+    );
+
+    await expect(runMeasureCli([], io, cliOptions(runners))).rejects.toThrow(
+      ExitCalled,
+    );
+
+    expect(codes).toEqual([1]);
+    expect(err).toEqual(["demo:medir: run 3/5, git B: boom\n"]);
+    expect(runners.calls).toHaveLength(15);
+    expect(await readFile(resultsFile, "utf8")).toBe("antigo\n");
+  });
+
+  it("rethrows an error that is not a HarnessError, without touching the file (C6)", async () => {
+    const { io, codes } = fakeIo();
+    const bug = new Error("bug");
+    const runners = fakeRunners((n) => (n === 1 ? bug : undefined));
+
+    await expect(runMeasureCli([], io, cliOptions(runners))).rejects.toBe(bug);
+
+    expect(codes).toEqual([]);
+    expect(await readFile(resultsFile, "utf8")).toBe("antigo\n");
   });
 });

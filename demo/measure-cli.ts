@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { RunGitScenarioOptions } from "./git-agents.js";
+import { HarnessError } from "./harness-error.js";
 import {
   formatMarkdown,
   formatProgress,
@@ -10,6 +11,7 @@ import {
   type MeasuredRun,
   measurementPlan,
   RESULTS_PATH,
+  ROUNDS,
   type Versions,
 } from "./measure.js";
 import { summarize } from "./metrics.js";
@@ -48,7 +50,9 @@ export interface MeasureCliOptions {
 /**
  * `demo:medir` (#21): runs the 30 runs of measurementPlan, one at a time,
  * and writes docs/resultados.md. Always ends with `io.exit`. 0: the 30 runs
- * finished and the file was written. 2: any argument.
+ * finished and the file was written. 1: a HarnessError in a run, named on
+ * stderr with its round, system and scenario; the file is not touched.
+ * 2: any argument. Any other error is a bug and is rethrown.
  */
 export async function runMeasureCli(
   argv: string[],
@@ -70,10 +74,22 @@ export async function runMeasureCli(
   const runs: MeasuredRun[] = [];
   for (const [index, planned] of plan.entries()) {
     const scenario = SCENARIOS[planned.scenario];
-    const result =
-      planned.system === "git"
-        ? await options.runGit({ scenario, baseDir, resultsDir, log })
-        : await options.runSprout({ scenario, dataDir, resultsDir, log });
+    let result: RunResult;
+    try {
+      result =
+        planned.system === "git"
+          ? await options.runGit({ scenario, baseDir, resultsDir, log })
+          : await options.runSprout({ scenario, dataDir, resultsDir, log });
+    } catch (error) {
+      if (error instanceof HarnessError) {
+        // The first harness error stops everything; the file is untouched.
+        io.stderr.write(
+          `demo:medir: run ${planned.round}/${ROUNDS}, ${planned.system} ${planned.scenario}: ${error.message}\n`,
+        );
+        return io.exit(1);
+      }
+      throw error; // a bug, not a harness error
+    }
     const summary = summarize(result.agents);
     runs.push({ ...planned, summary });
     io.stdout.write(
