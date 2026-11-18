@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatCount, median, timeStats } from "./measure.js";
+import {
+  formatCount,
+  formatProgress,
+  measurementPlan,
+  median,
+  timeStats,
+} from "./measure.js";
 
 describe("median", () => {
   it("is the middle value of an odd count", () => {
@@ -45,5 +51,32 @@ describe("formatCount (D7)", () => {
 
   it("refuses a list mixing null and numbers", () => {
     expect(() => formatCount([null, 1, 1, 1, 1])).toThrow(RangeError);
+  });
+});
+
+describe("measurementPlan (D4)", () => {
+  it("has 30 runs interleaved by round", () => {
+    const plan = measurementPlan();
+
+    expect(plan).toHaveLength(30);
+    expect(plan.slice(0, 7)).toEqual([
+      { round: 1, system: "git", scenario: "A" },
+      { round: 1, system: "sprout", scenario: "A" },
+      { round: 1, system: "git", scenario: "B" },
+      { round: 1, system: "sprout", scenario: "B" },
+      { round: 1, system: "git", scenario: "C" },
+      { round: 1, system: "sprout", scenario: "C" },
+      { round: 2, system: "git", scenario: "A" },
+    ]);
+    expect(plan[29]).toEqual({ round: 5, system: "sprout", scenario: "C" });
+    expect(plan.filter((run) => run.system === "git")).toHaveLength(15);
+  });
+});
+
+describe("formatProgress (D14)", () => {
+  it("shows the run number and the rounded total time", () => {
+    expect(formatProgress(7, 30, "git", "B", 1231.6)).toBe(
+      "[7/30] git B: 1232 ms",
+    );
   });
 });

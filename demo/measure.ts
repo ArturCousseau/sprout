@@ -1,3 +1,46 @@
+import type { System } from "./results.js";
+import type { ScenarioId } from "./scenarios.js";
+
+/** One run of the measurement: which round, system and scenario. */
+export interface PlannedRun {
+  /** 1-based round. */
+  round: number;
+  system: System;
+  scenario: ScenarioId;
+}
+
+/** Rounds of the measurement (D4). */
+export const ROUNDS = 5;
+
+/**
+ * The 30 runs in order (D4): in each round, A git, A sprout, B git,
+ * B sprout, C git, C sprout.
+ */
+export function measurementPlan(): PlannedRun[] {
+  const scenarios: ScenarioId[] = ["A", "B", "C"];
+  const systems: System[] = ["git", "sprout"];
+  const plan: PlannedRun[] = [];
+  for (let round = 1; round <= ROUNDS; round++) {
+    for (const scenario of scenarios) {
+      for (const system of systems) {
+        plan.push({ round, system, scenario });
+      }
+    }
+  }
+  return plan;
+}
+
+/** `[7/30] git B: 1232 ms`: one progress line, total time rounded (D14). */
+export function formatProgress(
+  index: number,
+  total: number,
+  system: System,
+  scenario: ScenarioId,
+  totalMs: number,
+): string {
+  return `[${index}/${total}] ${system} ${scenario}: ${Math.round(totalMs)} ms`;
+}
+
 /** The time statistics of one scenario and system over the rounds (D6). */
 export interface TimeStats {
   /** Each run's time, in whole milliseconds, in run order. */
