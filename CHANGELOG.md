@@ -19,6 +19,19 @@ para a issue e para o PR de onde veio. O processo de release está no
   8 limitações e os links
   ([#23](https://github.com/ArturCousseau/sprout/issues/23),
   [#53](https://github.com/ArturCousseau/sprout/pull/53)).
+- Abertura do `docs/demo.md` sem roteiro, sem duração da apresentação e sem o
+  Trabalho 2; no `docs/escopo.md`, sai do §2 a frase que pedia para dizer na
+  apresentação que a troca de pai é política nossa, e a linha do `v1.0.0` no
+  §10 passa a ser "Material final: README"
+  ([#25](https://github.com/ArturCousseau/sprout/issues/25),
+  [#54](https://github.com/ArturCousseau/sprout/pull/54)).
+
+### Removido
+
+- Seções 9 a 12 do `docs/demo.md`: roteiro de fala, plano B, checklist antes
+  da apresentação e perguntas prováveis
+  ([#25](https://github.com/ArturCousseau/sprout/issues/25),
+  [#54](https://github.com/ArturCousseau/sprout/pull/54)).
 
 ## [0.3.0] - 2026-11-18
 
