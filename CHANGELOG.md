@@ -10,6 +10,16 @@ para a issue e para o PR de onde veio. O processo de release está no
 
 ## [Não lançado]
 
+### Alterado
+
+- README final: o que é o Sprout, a relação com o Scion (o que o Sprout
+  demonstra e a troca de pai como política nossa), termos, requisitos, como
+  rodar a demo com um comando por linha, os resultados e a curva N × tentativas
+  copiados de `docs/resultados.md` e `docs/curva.md`, o escopo acadêmico, as
+  8 limitações e os links
+  ([#23](https://github.com/ArturCousseau/sprout/issues/23),
+  [#53](https://github.com/ArturCousseau/sprout/pull/53)).
+
 ## [0.3.0] - 2026-11-18
 
 ### Adicionado
