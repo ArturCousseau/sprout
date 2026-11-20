@@ -40,7 +40,7 @@ fica fora do escopo.
 
 **Atenção:** o artigo da Anthropic não detalha o que o Scion faz quando o
 compare-and-swap da `main` falha. A política de reparent do Sprout é uma decisão
-de projeto nossa, inspirada no artigo. Isso deve ser dito na apresentação.
+de projeto nossa, inspirada no artigo.
 
 ## 3. Princípios de arquitetura
 
@@ -215,11 +215,11 @@ autenticação.
 
 ## 10. Marcos
 
-| Milestone | Conteúdo                                                           |
-| --------- | ------------------------------------------------------------------ |
-| `v0.1.0`  | Fundação: projeto, CI, processo de contribuição, ADRs              |
-| `v0.2.0`  | Servidor: blobs, changesets, compare-and-swap, reparent, leitura   |
-| `v0.3.0`  | Demo: agentes, modos, cenários, placar, resultados                 |
-| `v1.0.0`  | Material final: README, vídeo de reserva, material da apresentação |
+| Milestone | Conteúdo                                                         |
+| --------- | ---------------------------------------------------------------- |
+| `v0.1.0`  | Fundação: projeto, CI, processo de contribuição, ADRs            |
+| `v0.2.0`  | Servidor: blobs, changesets, compare-and-swap, reparent, leitura |
+| `v0.3.0`  | Demo: agentes, modos, cenários, placar, resultados               |
+| `v1.0.0`  | Material final: README                                           |
 
 Entrega: 26/11/2026.
