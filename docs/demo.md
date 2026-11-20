@@ -1,7 +1,6 @@
 # A demo: git × Sprout com agentes concorrentes
 
-Roteiro e funcionamento detalhado da demonstração do Trabalho 2. Duração na
-apresentação: cerca de 5 minutos.
+Funcionamento detalhado e comandos da demonstração.
 
 ## 1. Objetivo
 
@@ -953,64 +952,3 @@ Verificado à mão em 17/11/2026, num terminal com `tput cols` = 142:
   `bat`, que não aceita `-v`);
 - uma gravação com o VHS (114 colunas): as cores aparecem, a linha de 111
   cabe e o placar mostra o destaque do §6.
-
-## 9. Roteiro de fala (cerca de 5 minutos)
-
-**0:00–0:30 · O cenário.**
-"O [integrante 2] mostrou que o git rejeita um push quando a `main` andou, mesmo
-com arquivos diferentes. Vamos ver isso acontecendo. Primeiro com dois agentes,
-devagar."
-
-**0:30–1:30 · Cenário A no git, passo a passo.**
-Um Enter por etapa. Na rejeição: "o agente 2 mexeu num arquivo diferente, mas o
-git só pergunta se o commit foi feito em cima da `main` atual. Não foi, então o
-agente 2 precisa buscar, refazer e tentar de novo."
-
-**1:30–2:30 · Cenário A no Sprout, passo a passo.**
-"Aqui não existe push. O agente 2 envia o changeset dizendo 'parti do 1'. O
-servidor vê que a `main` andou, confere que os arquivos são diferentes e só
-troca o pai. Um compare-and-swap, sem lock. O agente 2 não precisa refazer
-nada."
-
-**2:30–3:45 · Cenário B, rápido.**
-"Agora com dez agentes ao mesmo tempo." Roda o git, depois o Sprout, e mostra o
-placar. Aponte a linha de tentativas: "todos os commits entram nos dois, mas
-olhem quanto trabalho foi jogado fora no git."
-
-**3:45–4:30 · Cenário C, o caso honesto.**
-"E quando dois agentes mexem no mesmo arquivo? Nos dois sistemas, um é
-rejeitado. O Scion não faz mágica: ele só evita rejeitar o que não precisa ser
-rejeitado."
-
-**4:30–5:00 · Conclusão e passagem.**
-"Isso mostra o mecanismo, não a escala: o nosso servidor é um processo só, com
-SQLite. O Scion real faz isso distribuído, e o [integrante 3] vai mostrar como."
-
-## 10. Plano B
-
-- **Grave as três execuções em vídeo** assim que a demo funcionar, e grave de
-  novo se a demo mudar.
-- **Deixe o vídeo aberto** antes da apresentação, pronto para trocar.
-- Se algo travar ao vivo: "vou mostrar a execução que gravamos". Ensaie essa
-  troca também.
-
-## 11. Checklist antes da apresentação
-
-- [ ] Rodar `pnpm demo:reset` e os três cenários na máquina da apresentação
-- [ ] Fonte do terminal grande o bastante para o fundo da sala
-- [ ] Notificações do sistema desligadas
-- [ ] Wi-Fi desnecessário (tudo roda localmente), mas o vídeo de reserva salvo
-      no disco, não só na nuvem
-- [ ] Vídeo de reserva aberto e pausado no início
-- [ ] Cronometrar a demo inteira em pelo menos dois ensaios
-
-## 12. Perguntas prováveis
-
-| Pergunta                                                | Resposta                                                                                                                                                                   |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "Com retry, o git também aceita tudo. Qual a vantagem?" | A vantagem é o trabalho desperdiçado: rejeições, rebases e tempo. Mostre a linha de tentativas.                                                                            |
-| "Isso escala?"                                          | Não, e não é o objetivo: um processo só, com SQLite (ADR 0004). O Scion real usa o Spanner, distribuído.                                                                   |
-| "O que o Scion faz quando o compare-and-swap falha?"    | O artigo não detalha. A troca de pai é uma decisão nossa, inspirada no artigo.                                                                                             |
-| "Por que não fazer merge automático no mesmo arquivo?"  | Ficou fora do escopo. O artigo diz que, no caso deles, o Claude resolve esses conflitos.                                                                                   |
-| "Isso não é o que uma merge queue faz?"                 | A merge queue usa uma fila com trava global. O artigo diz que eles não conseguiram manter isso na escala de agentes e passaram a testar depois do merge e antes do deploy. |
-| "O git não seria mais rápido com o servidor na rede?"   | Seria mais lento. A demo roda o git localmente, sem rede, o que torna a comparação conservadora.                                                                           |
