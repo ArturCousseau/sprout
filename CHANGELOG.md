@@ -10,6 +10,8 @@ para a issue e para o PR de onde veio. O processo de release está no
 
 ## [Não lançado]
 
+## [1.0.0] - 2026-11-20
+
 ### Alterado
 
 - README final: o que é o Sprout, a relação com o Scion (o que o Sprout
@@ -236,7 +238,8 @@ para a issue e para o PR de onde veio. O processo de release está no
   ([#7](https://github.com/ArturCousseau/sprout/issues/7),
   [#28](https://github.com/ArturCousseau/sprout/pull/28)).
 
-[Não lançado]: https://github.com/ArturCousseau/sprout/compare/v0.3.0...HEAD
+[Não lançado]: https://github.com/ArturCousseau/sprout/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/ArturCousseau/sprout/releases/tag/v1.0.0
 [0.3.0]: https://github.com/ArturCousseau/sprout/releases/tag/v0.3.0
 [0.2.0]: https://github.com/ArturCousseau/sprout/releases/tag/v0.2.0
 [0.1.0]: https://github.com/ArturCousseau/sprout/releases/tag/v0.1.0
